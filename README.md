@@ -474,5 +474,3 @@ data: {"answer": "……完整答案……"}
 | `query_process/nodes/item_name_confirm.py` | 抽取出的商品名与改写问题未写回图状态，下游向量检索取不到 `item_names` 过滤条件 | 显式写回 `state["item_names"]` 与 `state["rewritten_query"]`，并复用同一次 LLM 抽取结果避免重复调用 |
 
 ---
-
-如果这个项目对你有帮助，欢迎 Star ⭐ 与 Issue 交流。
