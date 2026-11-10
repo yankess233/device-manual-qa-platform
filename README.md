@@ -30,6 +30,7 @@
 - [数据模型](#数据模型)
 - [关键配置项](#关键配置项)
 - [已知限制与规划](#已知限制与规划)
+- [更新记录](#更新记录)
 
 ---
 
@@ -52,7 +53,7 @@
 | --- | --- |
 | 手册结构化解析 | MinerU 4.x `parse -f zip --tier standard --ocr-mode auto`，保留 Markdown + images + 中间 JSON，表格与公式不丢 |
 | 图片语义化 | 按「最近章节标题 + 上下 200 字正文」构造上下文，调用视觉大模型生成图片摘要，替换为 MinIO 公网链接，答案可直接带图 |
-| 结构化切分 | 识别代码围栏内的 `#` 防止误切；标题层级维护 `hierarchy[]` 还原父标题；超长切片二次切分、过短切片合并 |
+| 结构化切分 | 识别代码围栏内的 `#` 防止误切；标题层级维护 `hierarchy[]` 还原父标题；超长切片二次切分、过短切片合并；子切片标题带 `（n/N）` 序号，不用正文首句充当标题 |
 | 表格降维 | HTML / Markdown 表格统一线性化为「列名: 值」文本，避免表格被切断后语义丢失 |
 | 商品主体识别 | LLM 从手册前若干切片抽取「品牌 + 型号 + 品类」写入 `item_name`，查询时作为标量过滤条件，避免跨设备串答案 |
 | 混合检索 | 同一份文本同时产出 dense（COSINE）与 sparse（IP）向量，Milvus `WeightedRanker(0.5, 0.5)` 融合 |
@@ -127,7 +128,7 @@ flowchart TD
 | 1 | `entry_node` | 路径校验、按扩展名路由、提取 `file_title` | `ValidationError` 兜底，非 pdf/md 直接中断 |
 | 2 | `pdf_to_md_node` | 调 `mineru-kit parse` 生成 zip，解包出 `markdown.md + images/` | `--tier standard`（小模型 + VLM）、`--ocr-mode auto`、行缓冲实时打印 |
 | 3 | `md_img_node` | 扫描图片 → 定位章节上下文 → VLM 生成摘要 → 上传 MinIO → 回写链接 | 三段式：`ImageScanner` / `VLMSummarizer`（20 rpm 限流）/ `ImageUploader` |
-| 4 | `document_split_node` | 标题切 initial section → 超长二次切 → 过短合并 → 组装 chunk | `hierarchy[7]` 还原父标题、代码围栏感知、`<table>` 线性化 |
+| 4 | `document_split_node` | 标题切 initial section → 超长二次切 → 过短合并 → 组装 chunk | `hierarchy[7]` 还原父标题、代码围栏感知、`<table>` 线性化、子切片标题追加 `（n/N）` 序号 |
 | 5 | `item_name_recognition_node` | 取前 3 个切片（≤2500 字）让 LLM 输出商品名，写入 item_name 集合 | 结构化 Prompt + `UNKNOWN` 兜底 |
 | 6 | `bge_embedding_node` | 以 `item_name + "\n" + content` 为嵌入文本，批量生成双向量 | batch=8，CSR → `{token_id: weight}` |
 | 7 | `import_milvus_node` | 建集合（dynamic field）、建双索引、批量 insert 并回填 `chunk_id` | 门面 + 建造者模式：SchemaBuilder / IndexBuilder / Inserter |
@@ -455,11 +456,22 @@ data: {"answer": "……完整答案……"}
 
 ## 已知限制与规划
 
-- **商品名对齐仍在完善**：`ItemNameAligner` 已预留向量对齐与分数差过滤的骨架，中置信场景的候选反问逻辑尚未全量接入。
+- **商品名对齐仍在完善**：`item_names` / `rewritten_query` 已由 LLM 抽取结果回写图状态并驱动下游检索，但 `ItemNameAligner` 的向量对齐、分数差过滤与中置信候选反问仍待接入。
 - **任务状态为进程内存**：`task_util` 使用内存字典维护进度与结果，服务重启后任务状态丢失；后续将迁移至 Redis。
 - **查询侧进度轮询**：`/status/{task_id}` 目前仅由导入服务提供，`chat.html` 已预留轮询入口，接入后可在对话页展示检索阶段进度。
 - **无鉴权 / 多租户**：当前面向内网或本地部署，生产环境建议前置网关做鉴权、限流与文件类型校验。
 - **规划**：BM25 独立召回通道、切片去重与增量更新、答案引用溯源（页码级）、多模态检索（以图搜手册）、Docker Compose 一键编排。
+
+## 更新记录
+
+**2026-11-10 · 流水线缺陷修复**
+
+| 位置 | 问题 | 修复 |
+| --- | --- | --- |
+| `import_process/nodes/md_img.py` | 图片链接替换结果只写入了备份文件，图状态里的 `md_content` 仍是转换前的原始 Markdown，后续切分拿不到 MinIO 图片地址 | 节点结尾回写 `state["md_content"] = new_md_content` |
+| `import_process/nodes/ducment_split.py` | 二次切分未扣除标题前缀长度，切片总长会超出 `max_content_length` | `chunk_size` 改用 `body_available_length`（阈值 − 标题前缀长度） |
+| `import_process/nodes/ducment_split.py` | 子切片用正文首句充当 `title`，污染标题字段与最终 `content` 前缀 | 改为 `标题（n/N）` 序号标注，`len(texts) == 1` 时保留原章节标题 |
+| `query_process/nodes/item_name_confirm.py` | 抽取出的商品名与改写问题未写回图状态，下游向量检索取不到 `item_names` 过滤条件 | 显式写回 `state["item_names"]` 与 `state["rewritten_query"]`，并复用同一次 LLM 抽取结果避免重复调用 |
 
 ---
 

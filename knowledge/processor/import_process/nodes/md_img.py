@@ -416,6 +416,8 @@ class MarkDownImageNode(BaseNode):
         
         self.md_file_handler.backup(md_path_obj, new_md_content)
 
+        state["md_content"] = new_md_content
+
         # print(summaries)
         # print(md_path_obj.parent.stem)
         # print(images_dir.name)

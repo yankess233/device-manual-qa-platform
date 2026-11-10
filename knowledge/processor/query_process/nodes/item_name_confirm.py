@@ -150,12 +150,16 @@ class ItemNameConfirmNode(BaseNode):
         extract_item_names:Dict[str,Any] = self._item_name_extractor.extract_item_name(original_query, history_text)
         print("extract_item_names=", extract_item_names)
         #extract_item_names= {'item_names': ['RS-12数字万用表', 'HAK180'], 'rewritten_query': 'RS-12数字万用表如何测量电压，以及HAK180的介质规格有哪些？'}
-        # 3.向量化匹配
-        # 4.评分对齐
-        # 5.分数差异过滤(仅当confirmed长度大于1)
-        # 6.决策更新状态
-        # 7.历史回填(仅当confirmed有值)
 
+        # 3.写回抽取结果（避免第二次调用 LLM，直接复用上面的抽取结果）
+        state["item_names"] = extract_item_names.get("item_names") or []
+        state["rewritten_query"] = extract_item_names.get("rewritten_query") or original_query
+
+        # 4.向量化匹配
+        # 5.评分对齐
+        # 6.分数差异过滤(仅当confirmed长度大于1)
+        # 7.决策更新状态
+        # 8.历史回填(仅当confirmed有值)
         return state
 
 

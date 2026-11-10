@@ -221,7 +221,7 @@ class DocumentSplitNode(BaseNode):
 
         # 8.需要继续切分
         splitter = RecursiveCharacterTextSplitter(
-            chunk_size=max_content_length,
+            chunk_size=body_available_length,
             chunk_overlap=0,
             keep_separator=False,
             # separators=["[SEP]","的",""]
@@ -234,7 +234,8 @@ class DocumentSplitNode(BaseNode):
 
         for index, text in enumerate(texts):
             sub_section.append({
-                "title": f"{text}--{index + 1}",
+                # 修复标题污染：子切片标题沿用章节标题并按序号标注，不再用正文首句充当标题
+                "title": f"{title}（{index + 1}/{len(texts)}）" if len(texts) > 1 else title,
                 "parent_title": parent_title,
                 "file_title": file_title,
                 "body": text,
