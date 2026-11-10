@@ -86,5 +86,35 @@ def clear_history(session_id: str) -> int:
         return 0
 
 def update_message_item_names(ids_to_update, confirmed):
-    #TODO 待实现
-    pass
+    """把已确认的商品名回填到历史消息
+
+    :param ids_to_update: 需要回填的消息 _id 列表（ObjectId 或 16 进制字符串）
+    :param confirmed: 已确认的商品名列表
+    :return: 实际修改的文档数
+    """
+    if not ids_to_update or not confirmed:
+        return 0
+
+    # 1.统一转成 ObjectId，非法 id 跳过
+    object_ids = []
+    for _id in ids_to_update:
+        try:
+            object_ids.append(ObjectId(str(_id)))
+        except Exception:
+            logger.warning(f"历史回填跳过非法消息 id: {_id}")
+            continue
+
+    if not object_ids:
+        return 0
+
+    # 2.批量更新
+    try:
+        result = _get_collection().update_many(
+            {"_id": {"$in": object_ids}},
+            {"$set": {"item_names": list(confirmed)}},
+        )
+        logger.info(f"历史回填商品名: {result.modified_count} 条 -> {confirmed}")
+        return result.modified_count
+    except Exception as e:
+        logger.error(f"Error updating item_names: {e}")
+        return 0

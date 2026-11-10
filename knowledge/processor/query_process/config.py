@@ -65,6 +65,10 @@ class QueryConfig:
     item_name_sparse_weight: float = field(
         default_factory=lambda: float(os.getenv("ITEM_NAME_SPARSE_WEIGHT", "0.5"))
     )
+    # 多候选时的分数差阈值：与最高分差距超过该值的候选视为噪声
+    item_name_gap_abs: float = field(
+        default_factory=lambda: float(os.getenv("ITEM_NAME_GAP_ABS", "0.15"))
+    )
 
     # ==================== LLM 配置 ====================
     openai_api_base: str = field(

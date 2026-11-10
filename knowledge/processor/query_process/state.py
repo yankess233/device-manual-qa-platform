@@ -25,7 +25,8 @@ class QueryGraphState(TypedDict):
     reranked_docs: list           # 重排序后的文档
     prompt: str                   # 提示词
     answer: str                   # 答案
-    item_names: List[str]         # 商品名称
+    item_names: List[str]         # 商品名称（已与知识库对齐）
+    extracted_item_names: List[str]  # LLM 原始抽取的商品名称（对齐前）
     rewritten_query: str          # 重写查询
     history: list                 # 历史对话
     is_stream: bool               # 是否流式输出
@@ -46,6 +47,7 @@ DEFAULT_STATE: QueryGraphState = {
     "prompt": "",
     "answer": "",
     "item_names": [],
+    "extracted_item_names": [],
     "rewritten_query": "",
     "history": [],
     "is_stream": False,

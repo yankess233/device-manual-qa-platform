@@ -56,6 +56,7 @@
 | 结构化切分 | 识别代码围栏内的 `#` 防止误切；标题层级维护 `hierarchy[]` 还原父标题；超长切片二次切分、过短切片合并；子切片标题带 `（n/N）` 序号，不用正文首句充当标题 |
 | 表格降维 | HTML / Markdown 表格统一线性化为「列名: 值」文本，避免表格被切断后语义丢失 |
 | 商品主体识别 | LLM 从手册前若干切片抽取「品牌 + 型号 + 品类」写入 `item_name`，查询时作为标量过滤条件，避免跨设备串答案 |
+| 商品名对齐 | 用户口述的「万用表」在 `item_name` 集合做混合检索对齐到库中规范名；分数差过滤 + 高置信锁定 / 歧义反问 / 历史回填 |
 | 混合检索 | 同一份文本同时产出 dense（COSINE）与 sparse（IP）向量，Milvus `WeightedRanker(0.5, 0.5)` 融合 |
 | 多路召回 | 向量检索 ∥ HyDE 检索 ∥ 联网 MCP 搜索 三路并行，`join` 汇合后 RRF 去重 |
 | 动态精排 | bge-reranker-large 打分，按分数断崖（gap ≥ 0.15）自适应截断 top-k（3~10），而非固定取前 N |
@@ -156,7 +157,7 @@ flowchart TD
 
 | # | 节点 | 职责 | 关键参数 |
 | --- | --- | --- | --- |
-| 1 | `item_name_confirm` | 读最近会话 → LLM 抽取 `item_names` 与 `rewritten_query` → 向量对齐评分 → 高低置信决策 | 高置信 0.7 / 中置信 0.6 / 最多 5 个候选 |
+| 1 | `item_name_confirm` | 读最近会话 → LLM 抽取 `item_names` 与 `rewritten_query` → 在 `item_name` 集合混合检索对齐 → 分数差过滤 → 置信度决策（锁定 / 反问 / 兜底）→ 历史回填 | 高置信 0.7 / 中置信 0.6 / 最多 5 个候选 / 差值 0.15 |
 | 2 | `search_embedding` | `item_names` 作为 `expr` 标量过滤，dense + sparse 混合检索 | `limit=10`，权重 0.5/0.5，`norm_score=True` |
 | 3 | `search_embedding_hyde` | 先让 LLM 写一段"标准答案式"技术文档，再用它去检索 | `limit=5` |
 | 4 | `web_search_mcp` | 通过 `MCPServerStreamableHttp` 调 `bailian_web_search`，补足手册外知识 | `count=3`，超时 300s |
@@ -453,16 +454,32 @@ data: {"answer": "……完整答案……"}
 | `EMBEDDING_SEARCH_LIMIT` | 10 | 向量检索召回数 |
 | `HYDE_SEARCH_LIMIT` | 5 | HyDE 检索召回数 |
 | `ITEM_NAME_HIGH_CONFIDENCE` / `MID_CONFIDENCE` | 0.7 / 0.6 | 商品名确认置信度阈值 |
+| `ITEM_NAME_GAP_ABS` | 0.15 | 多候选时与最高分的差值下限，低于此值的候选视为噪声 |
+| `ITEM_NAME_MAX_OPTIONS` | 5 | 反问时最多列出的候选商品数 |
 
 ## 已知限制与规划
 
-- **商品名对齐仍在完善**：`item_names` / `rewritten_query` 已由 LLM 抽取结果回写图状态并驱动下游检索，但 `ItemNameAligner` 的向量对齐、分数差过滤与中置信候选反问仍待接入。
+- **商品名对齐依赖 item_name 集合**：对齐检索基于导入阶段写入的 `item_name` 集合；若从未成功导入手册（集合为空），节点会退化为「直接用 LLM 抽取结果过滤」，此时可能召回为空。暂不支持人工纠错反馈回流。
 - **任务状态为进程内存**：`task_util` 使用内存字典维护进度与结果，服务重启后任务状态丢失；后续将迁移至 Redis。
 - **查询侧进度轮询**：`/status/{task_id}` 目前仅由导入服务提供，`chat.html` 已预留轮询入口，接入后可在对话页展示检索阶段进度。
 - **无鉴权 / 多租户**：当前面向内网或本地部署，生产环境建议前置网关做鉴权、限流与文件类型校验。
 - **规划**：BM25 独立召回通道、切片去重与增量更新、答案引用溯源（页码级）、多模态检索（以图搜手册）、Docker Compose 一键编排。
 
 ## 更新记录
+
+**2026-11-10 · 商品名确认节点补全（`query_process/nodes/item_name_confirm.py`）**
+
+原实现只完成「LLM 抽取 + 写回状态」，对齐评分、分数差过滤、置信度决策与历史回填均停留在注释。现已补齐：
+
+| 环节 | 实现 |
+| --- | --- |
+| 指代消解 | 拉取最近 10 条会话拼进 Prompt，同时把时间正序的历史写入 `state["history"]` 供答案节点使用 |
+| 抽取容错 | LLM 客户端缺失、调用异常、返回非 JSON 均降级为原始问题，不再抛错中断 |
+| 向量对齐 | `ItemNameAligner`：对抽取名批量 BGE-M3 编码，在 `item_name` 集合做稠密 + 稀疏混合检索，取 Top-1 作为对齐结果 |
+| 去重与差值过滤 | 同名商品保留最高分；多候选时剔除与最高分差距超过 `ITEM_NAME_GAP_ABS` 的噪声项 |
+| 置信度决策 | 唯一候选 → 锁定；多候选且最高分 ≥ 0.7 且领先 ≥ 0.15 → 锁定最高分；否则列出候选反问用户 |
+| 兜底 | 抽取为空 → 提示补型号；对齐全空（集合为空/服务不可用）→ 用抽取名继续检索，不阻断问答 |
+| 历史回填 | 新增 `update_message_item_names()` 批量实现，把确认的商品名写回此前缺 `item_names` 的用户消息 |
 
 **2026-11-10 · 流水线缺陷修复**
 
