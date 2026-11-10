@@ -475,9 +475,9 @@ data: {"answer": "……完整答案……"}
 | --- | --- |
 | 指代消解 | 拉取最近 10 条会话拼进 Prompt；时间正序写入 `state["history"]` 供答案节点使用 |
 | 抽取容错 | LLM 客户端缺失、调用异常、返回非 JSON 均降级为原始问题，不再抛错中断；抽取名去重 |
-| 向量对齐 `_match_vector` | 每条抽取名经 BGE-M3 编码后混合检索 `item_name` 集合 Top-5，产出 `{extracted_name, matches[]}` |
-| 评分对齐 `_item_name_score_align` | ≥ 0.7 高置信区：与抽取名同名直接确认、唯一候选直接确认、多个候选转入 options；0.6 ~ 0.7 落入候选区；options 最多 3 个 |
-| 分数差过滤 `_item_name_score_filter` | `confirmed` 多于 1 个时，按与最高分差值 ≤ `ITEM_NAME_GAP_ABS`（0.15）保留，剔除掉队项 |
+| 向量匹配 `match_vector` | 每条抽取名经 BGE-M3 编码后混合检索 `item_name` 集合 Top-5，产出 `{extracted_name, matches[]}` |
+| 评分对齐 `score_align` | ≥ 0.7 高置信区：与抽取名同名直接确认、唯一候选直接确认、多个候选转入 options；0.6 ~ 0.7 落入候选区；options 最多 3 个 |
+| 分数差过滤 `score_filter` | `confirmed` 多于 1 个时，按与最高分差值 ≤ `ITEM_NAME_GAP_ABS`（0.15）保留，剔除掉队项 |
 | 决策 `_decide` | `confirmed` → 锁定并清空 answer 继续三路检索；`options` → 生成反问话术；两者皆空 → 兜底道歉；三个分支统一写回 `rewritten_query` |
 | 历史回填 `_backfill_history` | 仅 `confirmed` 有值、且仅针对缺 `item_names` 的用户消息：内存同步 + `update_message_item_names()` 批量写 MongoDB |
 | 异常兜底 | 对齐链路抛错（Milvus / 嵌入模型不可用）→ 用 LLM 抽取结果继续检索，不阻断问答 |

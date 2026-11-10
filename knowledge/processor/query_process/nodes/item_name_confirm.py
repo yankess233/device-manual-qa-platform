@@ -97,50 +97,7 @@ class ItemNameAligner:
         self.node_name = node_name
         self.config = config
 
-    def match_align_filter(self, item_names) -> Tuple[List[str], List[str]]:
-        """
-        # 3.向量化匹配
-        # 4.评分对齐
-        # 5.分数差异过滤(仅当confirmed长度大于1)
-        :param item_names:
-        :return:
-        """
-
-        """  extracted_name就是LLM根据用户问题，识别的商品名称：
-            search_results: List[Dict[str, Any]]
-            [
-                {
-                    "extracted_name":extracted_name,
-                    "matches": [
-                        {"item_name":"商品A1", "score":0.9},
-                        {"item_name":"商品A2", "score":0.6},
-                    ]
-                },
-                {
-                    "extracted_name":extracted_name,
-                    "matches": [
-                        {"item_name":"商品B1", "score":0.9},
-                        {"item_name":"商品B2", "score":0.6},
-                    ]
-                }
-            ]
-        """
-
-        # 3. 向量匹配
-        search_results: List[Dict[str, Any]] = self._match_vector(item_names)
-
-        # 4.评分对齐
-        # confirmed 高置信商品  >=0.7
-        # options  中等置信商品，需要用户选择  >=0.6         < 0.7
-        confirmed, options = self._item_name_score_align(search_results)
-
-        # 5.分数差过滤，最高商品分数与其他商品分数差值大于 0.15   ,去掉分太低商品。
-        if len(confirmed) > 1:  # (仅当confirmed长度大于1)
-            confirmed = self._item_name_score_filter(confirmed, search_results)
-
-        return confirmed, options
-
-    def _match_vector(self, item_names) -> List[Dict[str, Any]]:
+    def match_vector(self, item_names) -> List[Dict[str, Any]]:
         """向量匹配： 根据LLM识别商品名称，从Milvus中查询相似商品名称（hybrid混合向量检索）
         args: 商品名称列表
         return:  search_results: List[Dict[str, Any]]
@@ -218,7 +175,7 @@ class ItemNameAligner:
             search_results.append(search_result)
         return search_results
 
-    def _item_name_score_align(self, search_results) -> Tuple[List[str], List[str]]:
+    def score_align(self, search_results) -> Tuple[List[str], List[str]]:
         """评分对齐
             规则：
                 1.   score >=0.7  高分区
@@ -283,7 +240,7 @@ class ItemNameAligner:
 
         return confirmed, options[:3]
 
-    def _item_name_score_filter(self, confirmed, search_results):
+    def score_filter(self, confirmed, search_results):
         """分数差过滤
         在高分区中，获取最高分。最高分减去 每一个分数，差值小于 0.15 保留；  否则丢弃
         """
@@ -368,22 +325,37 @@ class ItemNameConfirmNode(BaseNode):
         item_names = list(dict.fromkeys(item_names or []))
 
         # 3.向量化匹配
+        # LLM识别的商品名称 -> BGE-M3稠密+稀疏向量 -> Milvus item_name 集合混合检索 Top5
+        # search_results = [
+        #     {"extracted_name": "万用表", "matches": [{"item_name": "RS-12 数字万用表", "score": 0.92}, ...]},
+        #     {"extracted_name": "HAK180", "matches": [{"item_name": "HAK180 扫描仪", "score": 0.78}, ...]},
+        # ]
+        search_results: List[Dict[str, Any]] = []
+        align_failed = False  # 对齐链路是否异常（Milvus/嵌入模型不可用）
+
+        if item_names:
+            try:
+                search_results = self._item_name_aligner.match_vector(item_names)
+            except Exception as e:
+                align_failed = True
+                self.logger.error(f"商品名称向量匹配失败: {e}")
+
         # 4.评分对齐
+        # confirmed 高置信区商品名称（得分>=0.7）：与用户问题中的商品几乎一致，可直接进入三路检索
+        # options   中置信区商品名称（0.6<=得分<0.7）或高置信多选：需要用户二次选择
+        confirmed, options = self._item_name_aligner.score_align(search_results)
+
         # 5.分数差异过滤(仅当confirmed长度大于1)
-        # confirmed 存放已经确认商品名称。存储商品名称和用户问题中的商品名称几乎一致。得分>=0.7
-        # options 存放不确定用户问的是哪个商品？  选项商品。 让用户来选择其中商品，再进行下一步处理
-        # state['answer'] 存在 -> 选项？ 抱歉？
-        # state['answer'] 不存在 -> 商品名称已确认
-        try:
-            if item_names:
-                confirmed, options = self._item_name_aligner.match_align_filter(item_names)
-            else:
-                confirmed, options = [], []
-        except Exception as e:
-            # 对齐链路异常（Milvus/嵌入模型不可用）时降级：用LLM识别的名称继续检索，不阻断问答
-            self.logger.error(f"商品名称对齐失败，降级为LLM识别结果继续检索: {e}")
+        # 与最高分差值超过 item_name_gap_abs 的商品视为噪声，丢弃
+        if len(confirmed) > 1:
+            confirmed = self._item_name_aligner.score_filter(confirmed, search_results)
+
+        # 5.1 对齐链路异常时兜底：用LLM识别的名称继续检索，不阻断问答
+        if align_failed:
             confirmed, options = list(item_names or []), []
 
+        # state['answer'] 存在   -> 反问用户（options）或兜底道歉，流程直接进答案节点
+        # state['answer'] 不存在 -> 商品名称已确认，继续走三路检索
         # 6.决策更新状态
         self._decide(state, confirmed, options, rewritten_query)
 
