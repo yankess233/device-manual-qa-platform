@@ -473,13 +473,14 @@ data: {"answer": "……完整答案……"}
 
 | 环节 | 实现 |
 | --- | --- |
-| 指代消解 | 拉取最近 10 条会话拼进 Prompt，同时把时间正序的历史写入 `state["history"]` 供答案节点使用 |
-| 抽取容错 | LLM 客户端缺失、调用异常、返回非 JSON 均降级为原始问题，不再抛错中断 |
-| 向量对齐 | `ItemNameAligner`：对抽取名批量 BGE-M3 编码，在 `item_name` 集合做稠密 + 稀疏混合检索，取 Top-1 作为对齐结果 |
-| 去重与差值过滤 | 同名商品保留最高分；多候选时剔除与最高分差距超过 `ITEM_NAME_GAP_ABS` 的噪声项 |
-| 置信度决策 | 唯一候选 → 锁定；多候选且最高分 ≥ 0.7 且领先 ≥ 0.15 → 锁定最高分；否则列出候选反问用户 |
-| 兜底 | 抽取为空 → 提示补型号；对齐全空（集合为空/服务不可用）→ 用抽取名继续检索，不阻断问答 |
-| 历史回填 | 新增 `update_message_item_names()` 批量实现，把确认的商品名写回此前缺 `item_names` 的用户消息 |
+| 指代消解 | 拉取最近 10 条会话拼进 Prompt；时间正序写入 `state["history"]` 供答案节点使用 |
+| 抽取容错 | LLM 客户端缺失、调用异常、返回非 JSON 均降级为原始问题，不再抛错中断；抽取名去重 |
+| 向量对齐 `_match_vector` | 每条抽取名经 BGE-M3 编码后混合检索 `item_name` 集合 Top-5，产出 `{extracted_name, matches[]}` |
+| 评分对齐 `_item_name_score_align` | ≥ 0.7 高置信区：与抽取名同名直接确认、唯一候选直接确认、多个候选转入 options；0.6 ~ 0.7 落入候选区；options 最多 3 个 |
+| 分数差过滤 `_item_name_score_filter` | `confirmed` 多于 1 个时，按与最高分差值 ≤ `ITEM_NAME_GAP_ABS`（0.15）保留，剔除掉队项 |
+| 决策 `_decide` | `confirmed` → 锁定并清空 answer 继续三路检索；`options` → 生成反问话术；两者皆空 → 兜底道歉；三个分支统一写回 `rewritten_query` |
+| 历史回填 `_backfill_history` | 仅 `confirmed` 有值、且仅针对缺 `item_names` 的用户消息：内存同步 + `update_message_item_names()` 批量写 MongoDB |
+| 异常兜底 | 对齐链路抛错（Milvus / 嵌入模型不可用）→ 用 LLM 抽取结果继续检索，不阻断问答 |
 
 **2026-11-10 · 流水线缺陷修复**
 
