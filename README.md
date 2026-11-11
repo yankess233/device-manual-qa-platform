@@ -58,7 +58,7 @@
 | 商品主体识别 | LLM 从手册前若干切片抽取「品牌 + 型号 + 品类」写入 `item_name`，查询时作为标量过滤条件，避免跨设备串答案 |
 | 商品名对齐 | 用户口述的「万用表」在 `item_name` 集合做混合检索对齐到库中规范名；分数差过滤 + 高置信锁定 / 歧义反问 / 历史回填 |
 | 混合检索 | 同一份文本同时产出 dense（COSINE）与 sparse（IP）向量，Milvus `WeightedRanker(0.5, 0.5)` 融合 |
-| 多路召回 | 向量检索 ∥ HyDE 检索 ∥ 联网 MCP 搜索 三路并行，`join` 汇合后 RRF 去重 |
+| 多路召回 | 向量检索 ∥ HyDE 检索 ∥ 联网 MCP 搜索 三路并行；两路向量经 `join` 汇合走 RRF 去重，联网结果直连 `rerank` |
 | 动态精排 | bge-reranker-large 打分，按分数断崖（gap ≥ 0.15）自适应截断 top-k（3~10），而非固定取前 N |
 | 流式问答 | SSE 三类事件：`progress`（节点进度）/ `delta`（增量 token）/ `final`（完整答案） |
 | 会话记忆 | MongoDB `chat_message` 持久化，查询前做指代消解（"它怎么测电阻" → "RS-12 数字万用表怎么测电阻"） |
@@ -147,11 +147,11 @@ flowchart TD
     M --> V["search_embedding<br/>Milvus 混合检索"]
     M --> H["search_embedding_hyde<br/>HyDE 假设性文档检索"]
     M --> W["web_search_mcp<br/>百炼联网搜索"]
-    V --> J[["join（汇合）"]]
+    V --> J[["join（向量两路汇合）"]]
     H --> J
-    W --> J
     J --> R["rrf<br/>Reciprocal Rank Fusion"]
     R --> RR["rerank<br/>bge-reranker-large + 断崖截断"]
+    W --> RR
     RR --> A
 ```
 
@@ -161,8 +161,8 @@ flowchart TD
 | 2 | `search_embedding` | `item_names` 作为 `expr` 标量过滤，dense + sparse 混合检索 | `limit=10`，权重 0.5/0.5，`norm_score=True` |
 | 3 | `search_embedding_hyde` | 先让 LLM 写一段"标准答案式"技术文档，再用它去检索 | `limit=5` |
 | 4 | `web_search_mcp` | 通过 `MCPServerStreamableHttp` 调 `bailian_web_search`，补足手册外知识 | `count=3`，超时 300s |
-| 5 | `rrf` | 三路结果按名次融合，chunk_id 去重 | `k=60`，`max_results=10` |
-| 6 | `rerank` | 交叉编码器打分，按相邻分数断崖动态截断 | `top_k ∈ [3, 10]`，`gap_abs=0.15` |
+| 5 | `rrf` | 两路向量召回结果按名次融合，chunk_id 去重 | `k=60`，`max_results=10` |
+| 6 | `rerank` | 等待「RRF 结果 + 联网结果」双上游就绪后合并，交叉编码器打分并按相邻分数断崖动态截断 | `top_k ∈ [3, 10]`，`gap_abs=0.15` |
 | 7 | `answer_output` | 组装 `参考内容 + 历史对话 + 相关商品 + 问题`，流式或同步生成；解析 `【图片】` 区块 | 上下文预算 12000 字，历史 10 条 |
 
 `answer_output` 会先按字符预算装配切片上下文（保留标题与图片链接），再补入历史对话；若命中切片里含图片，模型在答案末尾输出 `【图片】` 区块，前端解析后直接渲染原图。
@@ -466,6 +466,14 @@ data: {"answer": "……完整答案……"}
 - **规划**：BM25 独立召回通道、切片去重与增量更新、答案引用溯源（页码级）、多模态检索（以图搜手册）、Docker Compose 一键编排。
 
 ## 更新记录
+
+**2026-11-11 · 查询图拓扑调整（`query_process/main_graph.py`）**
+
+| 位置 | 原状 | 调整 |
+| --- | --- | --- |
+| `web_search_mcp` 出边 | `web_search_mcp → join`，联网结果要与两路向量召回一起汇合 | 改为直连 `rerank`：RRF 只融合两路向量召回，`rrf` 可与联网搜索并行执行，减少一次汇合等待 |
+| `rerank` 入边 | 单边 `rrf → rerank` | 改为 `add_edge(["rrf", "web_search_mcp"], "rerank")` 列表声明：两个上游都完成才触发一次。若写成两条独立 `add_edge`，LangGraph 会按超步分别触发，`rerank` 与 `answer_output` 各执行两次（实测执行序 `v/h/w → rerank → answer → rrf → rerank → answer`，首轮 rerank 只有联网结果） |
+| `QueryConfig.openai_api_key` | 读 `OPENAI_API_KEY` | 改读 `DASHSCOPE_API_KEY`，与 `AIClients` 初始化所用密钥保持一致（MCP 联网检索的 Bearer 头同源） |
 
 **2026-11-10 · 商品名确认节点补全（`query_process/nodes/item_name_confirm.py`）**
 

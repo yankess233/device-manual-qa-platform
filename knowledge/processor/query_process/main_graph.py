@@ -53,34 +53,34 @@ def create_query_graph() -> CompiledStateGraph:
 
         item_name_confirm
               │
-              ├── (有答案) ──────────────────────────> answer_output
-              │                                            │
-              └── (无答案)                                  │
-                   │                                       │
-                   v                                       │
-              multi_search                                 │
-                   │                                       │
-             ┌─────┼──────────┐                            │
-             │     │          │                            │
-             v     v          v                            │
-        embedding  hyde    web_mcp                         │
-             │     │          │                            │
-             └─────┼──────────┘                            │
-                   │                                       │
-                   v                                       │
-                 join                                      │
-                   │                                       │
-                   v                                       │
-                  rrf                                      │
-                   │                                       │
-                   v                                       │
-                rerank                                     │
-                   │                                       │
-                   v                                       │
-             answer_output <───────────────────────────────┘
-                   │
-                   v
-                  END
+              ├── (有答案) ──────────────────────────────> answer_output
+              │                                                 │
+              └── (无答案)                                       │
+                   │                                            │
+                   v                                            │
+              multi_search                                      │
+                   │                                            │
+             ┌─────┼──────────┐                                │
+             │     │          │                                │
+             v     v          v                                │
+        embedding  hyde    web_mcp                             │
+             │     │          │                                │
+             └──┬──┘          │                                │
+                v             │                                │
+              join            │                                │
+                │             │                                │
+                v             │                                │
+               rrf            │                                │
+                │             │                                │
+                └──────┬──────┘                                │
+                       v                                       │
+                     rerank  （等 rrf 与 web_mcp 两个上游都完成）│
+                       │                                       │
+                       v                                       │
+                 answer_output <───────────────────────────────┘
+                       │
+                       v
+                      END
 
     Returns:
         编译后的 StateGraph 实例。
@@ -123,18 +123,21 @@ def create_query_graph() -> CompiledStateGraph:
     workflow.add_edge("multi_search", "search_embedding_hyde")
     workflow.add_edge("multi_search", "web_search_mcp")
 
-    # 7. 多路搜索汇合
+    # 7. 向量双路先汇合（联网搜索不再经过join，直接进rerank）
     workflow.add_edge("search_embedding", "join")
     workflow.add_edge("search_embedding_hyde", "join")
-    workflow.add_edge("web_search_mcp", "join")
 
     # 8. 顺序边
     workflow.add_edge("join", "rrf")
-    workflow.add_edge("rrf", "rerank")
+
+    # 9. rerank 需要两个上游都完成：RRF融合结果 + 联网搜索结果
+    # 注意：多上游必须用列表形式一次性声明，否则 rerank 会被任一上游触发而重复执行
+    workflow.add_edge(["rrf", "web_search_mcp"], "rerank")
+
     workflow.add_edge("rerank", "answer_output")
     workflow.add_edge("answer_output", END)
 
-    # 9. 返回可运行的状态
+    # 10. 返回可运行的状态
     return workflow.compile()
 
 
