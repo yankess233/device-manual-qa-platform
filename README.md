@@ -247,6 +247,8 @@ shoper_brain/
 │   ├── answer_ab.py                   # 答案层模型 A/B（同一上下文换模型）
 │   ├── service_eval.py                # 打真实服务的答案评测（人工 0/1）
 │   ├── compare_runs.py                # 多次 run 的指标 diff
+│   ├── make_report.py                 # 从 run 目录生成可提交的报告
+│   ├── REPORT-baseline.md             # 固化的评测报告（本页数字的来源）
 │   ├── badcase.md                     # 已归因的失败案例
 │   ├── model-compare.md               # 换模型实测记录
 │   ├── tests/                         # 23 个单测（指标 / 融合 / 截断）
@@ -517,6 +519,8 @@ data: {"answer": "……完整答案……"}
 
 > 代码在 `eval/`，一条命令复现：`python -m eval.run_eval --run-id baseline`。
 > 评测集不是"感觉能答对"，而是 50 道带 gold 切片的分层题目，逐条可追溯。
+> 完整证据（可复现信息 / 消融 / 分题型 / 未命中清单）：[`eval/REPORT-baseline.md`](eval/REPORT-baseline.md)，
+> 由 `python -m eval.make_report` 从 `summary.json` 生成，不是手抄。
 
 ### 评测集（50 题 / 6 类）
 

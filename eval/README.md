@@ -43,10 +43,20 @@ knowledge/.venv/Scripts/python.exe -m eval.run_eval --embedder hash --hyde none 
 
 | 文件 | 用途 |
 | --- | --- |
-| `summary.md` | **可直接粘进 README / 简历附录的表格** |
+| `summary.md` | 可直接粘进 README / 简历附录的表格 |
 | `summary.json` | 机器可读的完整指标（含分题型） |
 | `per_query.jsonl` | 每题 top-k、gold、耗时、上下文字数，用于 badcase 复盘 |
 | `config.json` | 实验参数、语料/数据集指纹、git sha，保证可复现 |
+
+`eval/results/` 不进版本库（体积 + 含本机路径）。要留证据就固化：
+
+```bash
+python -m eval.make_report --runs eval/results/<run_id> \
+    --compare eval/results/<另一组 run> --out eval/REPORT-baseline.md
+```
+
+仓库里的 [`REPORT-baseline.md`](REPORT-baseline.md) 就是这么生成的——
+**报告里的数字不是手抄的，改代码后重跑、重新生成即可**。
 
 ---
 

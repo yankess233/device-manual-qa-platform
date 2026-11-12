@@ -368,6 +368,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
         "git_sha": git_sha(),
         "llm_model": os.getenv("LLM_DEFAULT_MODEL", ""),
+        "llm_thinking": os.getenv("LLM_ENABLE_THINKING", "").strip().lower() or "default",
         "n_items": len(items),
         "type_counts": dataset_mod.type_breakdown(items),
         "n_chunks": len(chunks),
