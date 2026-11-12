@@ -92,6 +92,8 @@ docker-compose.override.yml
 docker-compose.dev.yml
 # Docker 相关
 .dockerignore
+# 例外：构建上下文裁剪规则要进版本库（deploy/Dockerfile 依赖它排除 .venv）
+!.dockerignore
 docker/
 *.dockerfile
 .docker/

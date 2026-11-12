@@ -255,6 +255,13 @@ shoper_brain/
 │   └── corpus/rs12.jsonl              # 评测语料快照（22 切片）
 ├── tools/
 │   └── pdf2md_zip.py                 # MinerU PDF→Markdown 独立工具（校验图片断链）
+├── deploy/                           # 虚拟机 Docker 部署
+│   ├── docker-compose.yml            # etcd/minio/milvus/mongo + 两个应用服务（profile）
+│   ├── Dockerfile                    # 应用镜像（CPU torch，MinerU 可选）
+│   ├── .env.example                  # 部署变量（端口/路径/模型/密钥）
+│   ├── verify.py                     # 部署后连通性自检
+│   └── README.md                     # 离线镜像导入与故障排查
+├── .dockerignore
 ├── .env.example
 └── README.md
 ```
@@ -383,6 +390,23 @@ python -m eval.run_eval --embedder hash --hyde none --limit 5 --configs A1_dense
 
 结果写到 `eval/results/<run_id>/`，其中 `summary.md` 可直接贴进文档。
 指标口径与标注协议见 [`eval/README.md`](eval/README.md)。
+
+### 8. 容器化部署（虚拟机 Docker）
+
+基础设施（Milvus / MinIO / MongoDB / etcd）与两个应用服务都提供了 compose：
+
+```bash
+cd deploy
+cp .env.example .env       # 填 DASHSCOPE_API_KEY、MODEL_DIR、数据卷目录
+docker compose up -d                       # 只起基础设施
+docker compose --profile app up -d --build # 基础设施 + 导入/问答服务
+docker compose --profile tools up -d       # 可选：Attu 图形界面
+python3 verify.py --host 127.0.0.1         # 端口与健康自检
+```
+
+镜像全部可离线导入（`docker load`），容器间用服务名互访，两个应用服务带 healthcheck
+与 `depends_on: condition: service_healthy`。离线 tar 导入、模型目录挂载、GPU 版写法、
+常见故障排查见 [`deploy/README.md`](deploy/README.md)。
 
 ## 接口文档
 

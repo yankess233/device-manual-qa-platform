@@ -1,0 +1,202 @@
+# ============================================================
+# 设备手册智能问答平台 · 虚拟机 Docker 部署
+#
+# 设计约束（来自现网环境）：
+#   1. 镜像全部来自离线 tar（milvus / etcd / minio / attu / mongo），不依赖外网拉取；
+#   2. 版本与 F:\BaiduNetdiskDownload\docker_images 里的 tar 一一对应；
+#   3. 两个应用服务与基础设施同网络，用服务名互访（milvus:19530 等）；
+#   4. 默认只起基础设施，应用服务放在 app profile 里，按需开启。
+#
+# 常用命令：
+#   docker compose up -d                      # 只起 infra
+#   docker compose --profile app up -d        # infra + 两个应用服务
+#   docker compose --profile tools up -d      # 额外起 Attu
+#   docker compose ps                         # 看 health 状态
+# ============================================================
+
+name: shoper-brain
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+x-app-base: &app-base
+  image: shoper-brain/app:${APP_IMAGE_TAG:-0.1}
+  build:
+    context: ..
+    dockerfile: deploy/Dockerfile
+    args:
+      WITH_MINERU: ${WITH_MINERU:-1}
+  env_file:
+    - .env
+  # 容器内一律用服务名，避免把 127.0.0.1 / 宿主机 IP 带进来
+  environment:
+    MILVUS_URL: http://milvus:19530
+    MINIO_ENDPOINT: minio:9000
+    MONGO_URL: mongodb://mongodb:27017
+    BGE_M3_PATH: /models/bge-m3
+    BGE_RERANKER_LARGE: /models/bge-reranker-large
+  volumes:
+    - ${MODEL_DIR:-./models}:/models:ro          # 模型只读，避免误写
+    - app-temp:/app/knowledge/temp_data          # 上传/解析中间产物，两服务共享
+    - app-cache:/home/app/.cache                 # MinerU / HF 模型缓存，重启不丢
+  depends_on:
+    milvus:
+      condition: service_healthy
+    minio:
+      condition: service_healthy
+    mongodb:
+      condition: service_healthy
+  restart: unless-stopped
+  logging: *default-logging
+
+services:
+  # ==================== etcd（Milvus 元数据） ====================
+  etcd:
+    container_name: milvus-etcd
+    image: quay.io/coreos/etcd:v3.5.25
+    environment:
+      ETCD_AUTO_COMPACTION_MODE: revision
+      ETCD_AUTO_COMPACTION_RETENTION: "1000"
+      ETCD_QUOTA_BACKEND_BYTES: "4294967296"
+      ETCD_SNAPSHOT_COUNT: "50000"
+    volumes:
+      - ${DOCKER_VOLUME_DIRECTORY:-.}/volumes/etcd:/etcd
+    command: etcd -advertise-client-urls=http://etcd:2379 -listen-client-urls http://0.0.0.0:2379 --data-dir /etcd
+    healthcheck:
+      test: ["CMD", "etcdctl", "endpoint", "health"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+      start_period: 20s
+    restart: always
+    logging: *default-logging
+
+  # ==================== MinIO（对象存储：Milvus 内部 + 手册/图片） ====================
+  minio:
+    container_name: kb-minio
+    image: minio/minio:RELEASE.2024-12-18T13-15-44Z
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-minioadmin}
+    ports:
+      - "${MINIO_API_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - ${DOCKER_VOLUME_DIRECTORY:-.}/volumes/minio:/minio_data
+    command: minio server /minio_data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+      start_period: 10s
+    restart: always
+    logging: *default-logging
+
+  # ==================== Milvus standalone ====================
+  milvus:
+    container_name: milvus-standalone
+    image: milvusdb/milvus:v2.5.5
+    command: ["milvus", "run", "standalone"]
+    security_opt:
+      - seccomp:unconfined
+    environment:
+      ETCD_ENDPOINTS: etcd:2379
+      MINIO_ADDRESS: minio:9000
+      MQ_TYPE: rocksmq
+    volumes:
+      - ${DOCKER_VOLUME_DIRECTORY:-.}/volumes/milvus:/var/lib/milvus
+    ports:
+      - "${MILVUS_PORT:-19530}:19530"
+      - "${MILVUS_METRICS_PORT:-9091}:9091"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9091/healthz"]
+      interval: 30s
+      start_period: 90s
+      timeout: 20s
+      retries: 5
+    restart: always
+    depends_on:
+      etcd:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    logging: *default-logging
+
+  # ==================== MongoDB（会话历史） ====================
+  mongodb:
+    container_name: kb-mongodb
+    image: mongo:7.0
+    ports:
+      - "${MONGO_PORT:-27017}:27017"
+    volumes:
+      - ${DOCKER_VOLUME_DIRECTORY:-.}/volumes/mongodb/data:/data/db
+      - ${DOCKER_VOLUME_DIRECTORY:-.}/volumes/mongodb/config:/data/configdb
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    restart: always
+    logging: *default-logging
+
+  # ==================== 应用：知识导入服务 ====================
+  import-app:
+    <<: *app-base
+    profiles: ["app"]
+    container_name: kb-import
+    command: ["python", "-m", "knowledge.api.import_router"]
+    ports:
+      - "${IMPORT_PORT:-8000}:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/docs', timeout=3).status == 200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  # ==================== 应用：问答服务 ====================
+  query-app:
+    <<: *app-base
+    profiles: ["app"]
+    container_name: kb-query
+    command: ["python", "-m", "knowledge.api.query_router"]
+    ports:
+      - "${QUERY_PORT:-8001}:8001"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8001/docs', timeout=3).status == 200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  # ==================== Attu（可选，Milvus GUI） ====================
+  attu:
+    profiles: ["tools"]
+    container_name: kb-attu
+    image: zilliz/attu:v2.5.10
+    environment:
+      MILVUS_URL: milvus:19530
+      ATTU_LOG_LEVEL: info
+      SERVER_PORT: "7000"
+    ports:
+      - "${ATTU_PORT:-7000}:7000"
+    restart: always
+    depends_on:
+      milvus:
+        condition: service_healthy
+    logging: *default-logging
+
+volumes:
+  # 导入服务与查询服务共享：导入写 temp_data，查询侧排查问题时可直接看
+  app-temp:
+  # MinerU / HuggingFace 下载缓存：不挂卷的话每次重建容器都要重新下载模型
+  app-cache:
+
+networks:
+  default:
+    name: kb-net

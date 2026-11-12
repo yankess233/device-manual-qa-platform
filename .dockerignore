@@ -1,0 +1,28 @@
+# 构建上下文瘦身：只把 knowledge/ 代码送进镜像
+# （context 是仓库根目录，见 deploy/docker-compose.yml 的 build.context: ..）
+
+.git
+.gitignore
+.idea
+.vscode
+
+# Python 缓存与本地虚拟环境（几个 GB，绝不能进 context）
+**/__pycache__
+**/*.pyc
+**/*.pyo
+knowledge/.venv
+knowledge/.env
+
+# 运行期数据：上传的 PDF、解析中间产物、切片备份
+knowledge/temp_data
+knowledge/processor/import_process/temp_dir
+
+# 评测产物（体积大且与镜像无关）
+eval
+deploy/models
+
+# 文档与打包文件
+*.tar
+*.zip
+求职作战手册.md
+shoper-brain-学习手册.md

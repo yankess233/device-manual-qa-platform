@@ -105,7 +105,9 @@ class AIClients(BaseClientManager):
         try:
             model_name = cls._require_env("BGE_M3_PATH")
             device = cls._require_env("BGE_DEVICE")
-            fp16 = cls._require_env("BGE_FP16")
+            # 这里原先直接把字符串传给 use_fp16，导致 BGE_FP16=false 也是"真"（非空字符串为真）。
+            # CPU 部署必须真正关掉半精度，否则会变慢甚至报错。
+            fp16 = cls._require_env("BGE_FP16").strip().lower() in ("true", "1", "yes", "on")
 
             bge_m3_ef = BGEM3EmbeddingFunction(
                 model_name=model_name,
@@ -137,7 +139,7 @@ class AIClients(BaseClientManager):
             model_name_or_path = cls._require_env("BGE_RERANKER_LARGE")
             device = cls._require_env("BGE_DEVICE")
             fp16_str = cls._require_env("BGE_FP16")
-            fp16 = fp16_str.lower() in ("true","1")
+            fp16 = fp16_str.strip().lower() in ("true", "1", "yes", "on")
 
             reranker = FlagReranker(
                 model_name_or_path=model_name_or_path,
