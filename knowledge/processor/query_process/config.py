@@ -48,6 +48,17 @@ class QueryConfig:
     hyde_search_limit: int = field(
         default_factory=lambda: int(os.getenv("HYDE_SEARCH_LIMIT", "5"))
     )
+    # 检索模式：hybrid（稠密+稀疏）/ dense / sparse。消融实验用，默认与线上一致
+    retrieval_mode: str = field(
+        default_factory=lambda: os.getenv("RETRIEVAL_MODE", "hybrid").strip().lower()
+    )
+    # 混合检索两路权重，替代此前硬编码的 (0.5, 0.5)
+    embedding_dense_weight: float = field(
+        default_factory=lambda: float(os.getenv("EMBEDDING_DENSE_WEIGHT", "0.5"))
+    )
+    embedding_sparse_weight: float = field(
+        default_factory=lambda: float(os.getenv("EMBEDDING_SPARSE_WEIGHT", "0.5"))
+    )
 
     # ==================== 商品确认节点配置 ====================
     item_name_high_confidence: float = field(

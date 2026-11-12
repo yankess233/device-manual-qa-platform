@@ -56,7 +56,9 @@ class HyDeSearchNode(BaseNode):
                 dense_vector=embedding_hybrid_result["dense"][0],
                 sparse_vector=embedding_hybrid_result["sparse"][0],
                 expr=expr,
-                expr_params=expr_params
+                expr_params=expr_params,
+                limit=self.config.hyde_search_limit,
+                mode=self.config.retrieval_mode
             )
 
             # 6.执行混合检索
@@ -64,8 +66,10 @@ class HyDeSearchNode(BaseNode):
                 milvus_client=milvus_client,
                 collection_name=self.config.chunks_collection,
                 search_requests=search_requests,
-                ranker_weights=(0.5, 0.5),
+                ranker_weights=(self.config.embedding_dense_weight,
+                                self.config.embedding_sparse_weight),
                 norm_score=True,
+                limit=self.config.hyde_search_limit,
                 output_fields=["chunk_id", "item_name", "content", "title"]
             )
 

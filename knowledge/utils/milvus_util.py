@@ -23,7 +23,8 @@ def create_hybrid_search_requests(dense_vector,
                                   sparse_params=None,
                                   expr=None,
                                   expr_params=None,
-                                  limit=5) -> List[AnnSearchRequest]:
+                                  limit=5,
+                                  mode="hybrid") -> List[AnnSearchRequest]:
     """
     创建混合搜索请求
 
@@ -34,12 +35,15 @@ def create_hybrid_search_requests(dense_vector,
     :param expr: 查询表达式，默认为None
     :param expr_params: 查询表达式的变量内容，默认为None
     :param limit: 返回结果数量限制，默认为5
+    :param mode: 检索模式 hybrid / dense / sparse（消融实验用，默认 hybrid 与线上一致）
     :return: 包含稠密和稀疏搜索请求的列表
     :raises ValueError: 向量参数无效
     :raises RuntimeError: 创建请求失败
     """
     if dense_vector is None or sparse_vector is None:
         raise ValueError("dense_vector 和 sparse_vector 不能为 None")
+    if mode not in ("hybrid", "dense", "sparse"):
+        raise ValueError(f"不支持的检索模式: {mode}")
 
     try:
         # 默认参数
@@ -68,6 +72,10 @@ def create_hybrid_search_requests(dense_vector,
             limit=limit
         )
 
+        if mode == "dense":
+            return [dense_req]
+        if mode == "sparse":
+            return [sparse_req]
         return [dense_req, sparse_req]
     except Exception as e:
         raise RuntimeError(f"创建混合搜索请求失败: {e}") from e
@@ -106,7 +114,11 @@ def execute_hybrid_search_query(milvus_client: MilvusClient,
 
     try:
         # 创建权重融合排序器
-        rerank = WeightedRanker(ranker_weights[0], ranker_weights[1], norm_score=norm_score)
+        # 单路检索（dense / sparse 消融）时只传一个权重，避免 WeightedRanker 参数个数不匹配
+        if len(search_requests) == 1:
+            rerank = WeightedRanker(1.0, norm_score=norm_score)
+        else:
+            rerank = WeightedRanker(ranker_weights[0], ranker_weights[1], norm_score=norm_score)
 
         # 默认输出字段
         if output_fields is None:
