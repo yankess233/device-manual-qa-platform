@@ -1,19 +1,16 @@
-# 评测层（P0）
+# 评测层（eval/）
 
-> 目标：把这个 RAG 项目从"我做过"变成"我知道它好多少、贵多少、崩在哪"。
-> 这里产出的每一个数字，都是简历上可以写、面试时可以被追问的**证据**。
+> 目标：让检索链路的每个组件都有可对比的数字——好多少、贵多少、崩在哪。
+> 这里产出的每一个指标都要能追溯到具体的 run、语料指纹与提交。
 
 ---
 
 ## 1. 为什么需要这一层
 
-当前项目的问题不是"跑不起来"，而是**没有任何可验证的质量证据**：
+项目原先只有"跑通"这一条证据：混合检索、HyDE、RRF、断崖截断都写在 README 里，
+却没有任何对比数据说明这些组件是否真的有用；改了切分或权重，也无法判断是变好还是变坏。
 
-- README 里写着混合检索、HyDE、RRF、断崖截断，但没有任何对比数据说明这些组件是否真的有用；
-- 改了切分、改了权重、改了解码逻辑，无法判断是变好还是变坏；
-- 面试官问"Hit@5 多少""加了 rerank 提升几个点""一次问答多少钱"，答不上来。
-
-这一层解决的就是这件事：**可复现的指标 + 可归因的消融 + 可讲述的失败案例**。
+这一层补上的就是：**可复现的指标 + 可归因的消融 + 有记录的失败案例**。
 
 ---
 
@@ -43,7 +40,7 @@ knowledge/.venv/Scripts/python.exe -m eval.run_eval --embedder hash --hyde none 
 
 | 文件 | 用途 |
 | --- | --- |
-| `summary.md` | 可直接粘进 README / 简历附录的表格 |
+| `summary.md` | 可直接粘进 README 的表格 |
 | `summary.json` | 机器可读的完整指标（含分题型） |
 | `per_query.jsonl` | 每题 top-k、gold、耗时、上下文字数，用于 badcase 复盘 |
 | `config.json` | 实验参数、语料/数据集指纹、git sha，保证可复现 |
@@ -131,16 +128,16 @@ knowledge/.venv/Scripts/python.exe -m eval.service_eval --endpoint http://127.0.
 knowledge/.venv/Scripts/python.exe -m eval.service_eval --score eval/results/answers_xxx.csv
 ```
 
-**答案正确性不交给 LLM 自动判分**。自评偏差太大，面试官一问"你怎么保证 judge 不偏"
-就答不上来。做法是：人工打 0/1，抽检比例 100%（50 题不多），
-`keyword_hit` / `abstain_ok` 只作为辅助信号。
+**答案正确性不交给 LLM 自动判分**。自评偏差无法复核，做法是人工打 0/1
+（50 题规模下全量抽检成本可控），`keyword_hit` / `abstain_ok` 只作为辅助信号；
+同义表述会造成漏判，见 `answer_ab.py` 里 `verdict()` 的注释。
 
 多轮题会先把 `history` 逐条发给同一 `session_id` 制造真实历史，再发最终问题，
 而不是把历史拼进 query 里假装多轮。
 
 ---
 
-## 7. 已知限制（写清楚，别藏着）
+## 7. 已知限制（便于复现与判断适用边界）
 
 1. **本地是精确检索**，线上 Milvus 是 HNSW 近似检索，绝对数值会有小幅差异；
 2. **WeightedRanker 用 min-max 归一化近似复刻**，绝对分数与 Milvus 不等价，只用于相对比较；
@@ -154,21 +151,7 @@ knowledge/.venv/Scripts/python.exe -m eval.service_eval --score eval/results/ans
 
 ---
 
-## 8. 数字怎么进简历
-
-| 简历句式 | 数据来源 |
-| --- | --- |
-| "Hit@5 由 62% 提升至 88%" | `summary.md` 里 `A1_dense` → `A4_rerank` |
-| "RRF 融合使 MRR 提升 0.07" | `A2_hybrid` → `A3_hyde_rrf` |
-| "断崖截断将平均上下文从 4100 字降至 2600 字，Hit@5 不降" | `A4_rerank` → `A5_cutoff` 的 `avg_context_chars` |
-| "P95 首 token 1.4s、单次问答 0.012 元" | `service_eval.py` + 账单/token 统计 |
-| "50 题分层评测集，5 类题型" | `dataset.jsonl` 的 `type_breakdown` |
-
-**只写你跑出来的数**。`--embedder hash` 的结果、"感觉差不多"的结果，一律不许写。
-
----
-
-## 9. CI 冒烟（可选）
+## 8. CI 冒烟（可选）
 
 ```yaml
 - run: python -m pytest eval/tests -q
@@ -177,3 +160,6 @@ knowledge/.venv/Scripts/python.exe -m eval.service_eval --score eval/results/ans
 ```
 
 前两条不依赖 GPU 和网络，适合放进 GitHub Actions。
+
+> 注意：`--embedder hash` 只用字符级词袋，链路可跑通但指标无意义，仅用于冒烟，
+> 任何结论都必须来自 `bge-m3` 的 run。

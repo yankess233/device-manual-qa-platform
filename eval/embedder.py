@@ -6,7 +6,7 @@
 2. **磁盘缓存**：消融实验会对同一批 query 反复编码 5~6 次；
    缓存把"唯一文本数"控制住，直接把实验成本从 N×K 降到 N。
 3. **hash 兜底**：没有 GPU、没下载模型时也能把整条链路跑通（CI / 冒烟测试），
-   但它只是字符级词袋，**产出的数字不能写进简历**。
+   但它只是字符级词袋，**产出的数字不能作为结论**。
 """
 
 from __future__ import annotations
@@ -167,6 +167,6 @@ def build(name: str) -> CachedEmbedder:
     if key in ("bge", "bge-m3", "real"):
         return CachedEmbedder(BgeM3Embedder())
     if key in ("hash", "mock", "smoke"):
-        logger.warning("使用 hash 兜底编码器：链路可跑通，但指标无意义，不可入简历")
+        logger.warning("使用 hash 兜底编码器：链路可跑通，但指标无意义，不可作为结论")
         return CachedEmbedder(HashEmbedder())
     raise ValueError(f"未知 embedder：{name!r}（可选 bge / hash）")

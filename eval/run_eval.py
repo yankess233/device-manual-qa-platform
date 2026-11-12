@@ -126,7 +126,7 @@ def run_one(item, cfg, index, embedder, reranker, hyde) -> dict:
 
     计时口径：``latency_ms`` 只统计「嵌入 + 检索 + 融合 + 精排」，
     HyDE 的 LLM 调用单独记在 ``hyde_ms``。
-    混在一起会出现"命中缓存时 HyDE 免费"的假象——面试官一追问就露馅。
+    混在一起会得出"命中缓存时 HyDE 免费"的错误结论。
     """
     query = item.query_for_retrieval()
     hyde_ms = 0.0

@@ -4,7 +4,7 @@
 - 手抄的表格一定会和代码漂移（改一次切分，README 里的数字就过期）；
 - 报告里必须带**可复现信息**（commit、语料指纹、数据集指纹、模型、思考模式），
   这些从 `summary.json` / `config.json` 里读，不靠记忆；
-- 面试官/评审者 clone 下来看不到 `eval/results/`（已 gitignore），
+- 评审者 clone 下来看不到 `eval/results/`（已 gitignore），
   仓库里必须有一份固化的证据。
 
 用法::
