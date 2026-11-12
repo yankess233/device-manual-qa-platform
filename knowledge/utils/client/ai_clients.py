@@ -1,4 +1,5 @@
 import logging
+import os
 import threading
 
 from langchain_openai import ChatOpenAI
@@ -65,14 +66,23 @@ class AIClients(BaseClientManager):
             if response_format:
                 model_kwargs['response_format'] = {"type": "json_object"}
 
+            # 思考模式开关：qwen3 系列默认开思考（单次 20s+，在线问答不可接受）。
+            # 只有显式配置 LLM_ENABLE_THINKING 时才下发该参数，
+            # 避免在 qwen-flash 这类不支持该参数的模型上报错。
+            extra_body = {}
+            thinking_flag = os.getenv("LLM_ENABLE_THINKING", "").strip().lower()
+            if thinking_flag in ("1", "true", "yes", "0", "false", "no"):
+                extra_body["enable_thinking"] = thinking_flag in ("1", "true", "yes")
+
             client = ChatOpenAI(
                 model_name=model_name,
                 openai_api_key=api_key,
                 openai_api_base=base_url,
                 temperature=0,
-                model_kwargs=model_kwargs
+                model_kwargs=model_kwargs,
+                extra_body=extra_body or None,
             )
-            logger.info(f"ChatOpenAI LLM 客户端初始化成功")
+            logger.info(f"ChatOpenAI LLM 客户端初始化成功（model={model_name}, enable_thinking={extra_body.get('enable_thinking', '默认')}）")
             return client
         except EnvironmentError:
             raise
