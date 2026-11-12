@@ -121,3 +121,9 @@ temp_files/
 # 若本地运行的临时数据库文件
 *.db
 *.sqlite
+
+# ========== 评测层（eval/） ==========
+# 嵌入/精排/HyDE 缓存：可重建，体积大，不入库
+eval/.cache/
+# 实验输出：本地留档，跑完只提交 summary.md 的结论进 README
+eval/results/
