@@ -12,7 +12,11 @@
   <img alt="MinerU" src="https://img.shields.io/badge/MinerU-4.x-6C47FF">
   <img alt="MinIO" src="https://img.shields.io/badge/MinIO-Object%20Storage-C72E49">
   <img alt="MongoDB" src="https://img.shields.io/badge/MongoDB-History-47A248?logo=mongodb&logoColor=white">
+  <img alt="Eval" src="https://img.shields.io/badge/Eval-50%20queries%20%C2%B7%205%20ablations-4B8BBE">
 </p>
+
+> **有评测**：50 题分层评测集 + A1~A5 检索消融 + 答案层模型 A/B，见 [评测](#评测) 与 [`eval/`](eval/README.md)。
+> 结论不是"全都好用"——实测 **HyDE 是负收益**，因此默认配置关掉了思考模式，并把该链路的去留写进了已知限制。
 
 ---
 
@@ -29,6 +33,7 @@
 - [接口文档](#接口文档)
 - [数据模型](#数据模型)
 - [关键配置项](#关键配置项)
+- [评测](#评测)
 - [已知限制与规划](#已知限制与规划)
 - [更新记录](#更新记录)
 
@@ -42,7 +47,8 @@
 
 1. **入库**：PDF 经 MinerU 解析为结构化 Markdown，图片被 VLM 语义化并托管到对象存储；
 2. **切分**：按标题层级切分 + 长切短合 + 表格线性化，切片自带 `文件 / 父标题 / 标题 / 商品名` 四级上下文；
-3. **检索**：BGE-M3 稠密 + 稀疏双向量混合检索，叠加 HyDE 假设性文档与联网搜索多路召回，RRF 融合后用 reranker 精排截断；
+3. **检索**：BGE-M3 稠密 + 稀疏双向量混合检索，RRF 融合后 bge-reranker 精排，再按分数断崖自适应截断
+   （另实现了 HyDE 与联网 MCP 两路召回，但实测 HyDE 在本业务为负收益，详见[评测](#评测)）；
 4. **回答**：大模型基于命中切片生成答案，支持 SSE 流式输出，并可直接回显手册原图（接线图、示意图、结构图）。
 
 同时提供两条独立的 FastAPI 服务与两套零依赖原生页面：**知识导入台**（上传 + 节点级进度）与**问答客服台**（流式对话 + 历史会话）。
@@ -179,9 +185,11 @@ flowchart TD
 | 向量库 | Milvus（MilvusClient） | HNSW/SPARSE 索引、hybrid_search、标量过滤 |
 | 对象存储 | MinIO | 原始手册与图片托管，直链回显 |
 | 会话存储 | MongoDB | `chat_message` 会话历史与商品名回填 |
-| 大模型 | OpenAI 兼容接口（DashScope） | 商品名抽取、HyDE、答案生成、VLM 图片摘要 |
+| 大模型 | OpenAI 兼容接口（DashScope `qwen3.8-flash`） | 商品名抽取、HyDE、答案生成；`LLM_ENABLE_THINKING` 控制思考模式 |
+| 视觉模型 | `qwen3-vl-plus` | 手册插图语义化（`VL_MODEL`） |
 | 联网检索 | 阿里云百炼 MCP | `bailian_web_search` 工具 |
 | 前端 | 原生 HTML + CSS + JS | 无构建依赖，`EventSource` 消费 SSE |
+| 评测 | 自建 50 题分层集 + pytest | 检索消融（Hit/MRR/nDCG）、答案层 A/B、badcase 归因 |
 
 ## 目录结构
 
@@ -225,6 +233,23 @@ shoper_brain/
 │   ├── test/                         # 连通性 / 解析 / 嵌入验证脚本
 │   ├── .env                          # 本地密钥（.gitignore）
 │   └── requirements.txt
+├── eval/                              # 评测层（与线上同一套代码路径）
+│   ├── dataset.jsonl                  # 50 题分层评测集（章节 + 证据句锚点）
+│   ├── link_gold.py                   # 锚点 → chunk_id，解析失败即报错
+│   ├── corpus.py                      # 从干净 Markdown 重切语料（带编码校验）
+│   ├── retrieval.py                   # 稠密/稀疏/加权融合/RRF/精排/断崖截断
+│   ├── metrics.py                     # Hit / Recall / Precision / MRR / nDCG
+│   ├── embedder.py                    # BGE-M3 编码 + 磁盘缓存（hash 兜底冒烟）
+│   ├── hyde.py                        # HyDE 生成（缓存键含模型与思考模式）
+│   ├── configs.py                     # A1~A5 消融配置
+│   ├── run_eval.py                    # 检索消融入口，输出 summary.md/json
+│   ├── answer_ab.py                   # 答案层模型 A/B（同一上下文换模型）
+│   ├── service_eval.py                # 打真实服务的答案评测（人工 0/1）
+│   ├── compare_runs.py                # 多次 run 的指标 diff
+│   ├── badcase.md                     # 已归因的失败案例
+│   ├── model-compare.md               # 换模型实测记录
+│   ├── tests/                         # 23 个单测（指标 / 融合 / 截断）
+│   └── corpus/rs12.jsonl              # 评测语料快照（22 切片）
 ├── tools/
 │   └── pdf2md_zip.py                 # MinerU PDF→Markdown 独立工具（校验图片断链）
 ├── .env.example
@@ -288,9 +313,9 @@ cp .env.example knowledge/.env
 # ---------- 大模型 ----------
 OPENAI_API_BASE=https://dashscope.aliyuncs.com/compatible-mode/v1
 DASHSCOPE_API_KEY=sk-xxxxxxxxxxxxxxxx
-LLM_DEFAULT_MODEL=qwen-plus
-VL_MODEL=qwen-vl-max
-ITEM_MODEL=qwen-plus
+LLM_DEFAULT_MODEL=qwen3.8-flash
+VL_MODEL=qwen3-vl-plus
+ITEM_MODEL=qwen3.8-flash
 
 # ---------- 向量 / 重排 ----------
 BGE_M3_PATH=/models/bge-m3
@@ -336,6 +361,25 @@ python -m knowledge.api.query_router      # http://127.0.0.1:8001
 | --- | --- | --- |
 | 知识导入台 | <http://127.0.0.1:8000/import> | 拖拽上传 PDF/Markdown，实时查看 7 个节点进度与耗时 |
 | 问答客服台 | <http://127.0.0.1:8001/chat> | 连续对话、勾选流式输出、清空会话、查看配图 |
+
+### 7. 跑评测（可选，但建议）
+
+```bash
+# 单测：指标 / 融合 / 断崖截断
+python -m pytest eval/tests -q
+
+# 校验标注：把「章节 + 证据句」解析成当前语料下的 chunk_id
+python -m eval.link_gold
+
+# 5 组检索消融（需要 GPU + BGE 权重 + DASHSCOPE_API_KEY）
+python -m eval.run_eval --run-id baseline
+
+# 没有模型权重时只验证链路（数字无意义）
+python -m eval.run_eval --embedder hash --hyde none --limit 5 --configs A1_dense,A2_hybrid
+```
+
+结果写到 `eval/results/<run_id>/`，其中 `summary.md` 可直接贴进文档。
+指标口径与标注协议见 [`eval/README.md`](eval/README.md)。
 
 ## 接口文档
 
@@ -451,21 +495,144 @@ data: {"answer": "……完整答案……"}
 | `RRF_MAX_RESULTS` | 10 | 融合后保留数量 |
 | `RERANK_MAX_TOP_K` / `RERANK_MIN_TOP_K` | 10 / 3 | 断崖截断上下界 |
 | `RERANK_GAP_ABS` | 0.15 | 相邻分数断崖阈值 |
-| `EMBEDDING_SEARCH_LIMIT` | 10 | 向量检索召回数 |
-| `HYDE_SEARCH_LIMIT` | 5 | HyDE 检索召回数 |
+| `EMBEDDING_SEARCH_LIMIT` | 10 | 向量检索召回条数（已接入 `vector_search`，此前只定义未使用） |
+| `HYDE_SEARCH_LIMIT` | 5 | HyDE 检索召回条数（同上） |
+| `RETRIEVAL_MODE` | `hybrid` | `hybrid` / `dense` / `sparse`，消融实验用 |
+| `EMBEDDING_DENSE_WEIGHT` / `EMBEDDING_SPARSE_WEIGHT` | 0.5 / 0.5 | 混合检索两路权重（此前硬编码） |
 | `ITEM_NAME_HIGH_CONFIDENCE` / `MID_CONFIDENCE` | 0.7 / 0.6 | 商品名确认置信度阈值 |
 | `ITEM_NAME_GAP_ABS` | 0.15 | 多候选时与最高分的差值下限，低于此值的候选视为噪声 |
 | `ITEM_NAME_MAX_OPTIONS` | 5 | 反问时最多列出的候选商品数 |
 
+大模型侧（`knowledge/utils/client/ai_clients.py`）：
+
+| 环境变量 | 默认值 | 说明 |
+| --- | --- | --- |
+| `LLM_DEFAULT_MODEL` | `qwen3.8-flash` | 商品名抽取 / HyDE / 答案生成 |
+| `LLM_ENABLE_THINKING` | `false` | qwen3 系列默认开思考，单次 20s+；留空表示不下发该参数 |
+| `ITEM_MODEL` | `qwen3.8-flash` | 导入侧商品名识别 |
+| `VL_MODEL` | `qwen3-vl-plus` | 图片摘要 |
+
+## 评测
+
+> 代码在 `eval/`，一条命令复现：`python -m eval.run_eval --run-id baseline`。
+> 评测集不是"感觉能答对"，而是 50 道带 gold 切片的分层题目，逐条可追溯。
+
+### 评测集（50 题 / 6 类）
+
+| 题型 | 数量 | 测什么 | 有 gold |
+| --- | --- | --- | --- |
+| `fact` | 12 | 单跳事实（位数、重量、频宽、阈值） | ✅ |
+| `table` | 10 | 规格表数值（分辨率、精确度、量程） | ✅ |
+| `procedure` | 10 | 多步骤操作（档位、端口、顺序） | ✅ |
+| `multi_turn` | 8 | 指代消解（"它/那/呢"） | ✅ |
+| `out_of_scope` | 6 | 手册外（蓝牙、电容、价格、校准） | ❌ 应弃答 |
+| `negative` | 4 | 领域内但手册没写（保修、螺丝数量） | ❌ 应弃答 |
+
+标注不写 chunk_id，而是写「章节 + 原文证据句」，由 `eval/link_gold.py` 解析成当前语料下的
+chunk_id；**解析不到直接报错退出**，等于用机器反查"这道题到底能不能从手册里找到答案"。
+
+### 检索消融（22 切片，BGE-M3 + bge-reranker-large，单卡 3060）
+
+默认配置：`qwen3.8-flash` + `LLM_ENABLE_THINKING=false`；每次只加一个变量。
+
+| 配置 | Hit@5 | Recall@5 | MRR@5 | nDCG@5 | 平均文档数 | 平均上下文字数 | P95 检索耗时 | HyDE 额外 LLM |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| A1 稠密 | 0.875 | 0.875 | 0.758 | 0.788 | 10.0 | 3803 | 0.2 ms | — |
+| A2 +稀疏（混合） | 0.900 | 0.900 | 0.756 | 0.792 | 10.0 | 3755 | 0.2 ms | — |
+| A3 +HyDE & RRF | 0.875 | 0.875 | 0.728 | 0.764 | 10.0 | 3830 | 579 ms | **+5236 ms/题** |
+| A4 +精排 | **0.950** | **0.950** | **0.885** | **0.902** | 10.0 | 3830 | 76.6 ms | 缓存命中 |
+| A5 +断崖截断 | **0.950** | **0.950** | **0.885** | **0.902** | **8.2** | **3163** | 0.7 ms | 缓存命中 |
+
+分题型（A4）：`table` 1.000、`procedure` 1.000、`fact` 0.917、`multi_turn` 0.875。
+`out_of_scope` / `negative` 无 gold，检索指标不适用，只在答案层统计弃答率。
+
+### 四条结论
+
+1. **稀疏召回只值 2.5 个点**：Hit@5 0.875 → 0.900，MRR 几乎不动（0.758 → 0.756）。
+   本场景 query 短、型号词少，稠密向量已经吃下了大部分语义；稀疏主要在"型号/量程"这类
+   精确串上兜底，属于保险而非主力。
+2. **HyDE + RRF 三次 run 都没赢过纯混合检索**：Hit@5 0.850 ~ 0.875（A2 是 0.900），
+   MRR 0.714 ~ 0.729（A2 是 0.756），且每题多一次 3 ~ 5 秒的 LLM 调用（开思考时 22 秒）。
+   原因是手册答案是"参数、步骤、阈值"这类事实型内容，而 HyDE 生成的是"看似专业的说明文"，
+   会把不存在的数值灌进检索空间；RRF 只看名次不看分数量级，等于给这份编造文档同样的投票权。
+   **结论：生产默认值应关掉 HyDE，只保留开关。**
+3. **精排是唯一"确定赚"的组件**：+5 个点 Hit@5、+0.127 MRR、+0.110 nDCG，代价 76 ms
+   GPU 耗时。这也是"先精排、再谈别的"这个优化顺序的依据。
+4. **断崖截断省 17% 上下文且不掉点**：平均文档 10.0 → 8.2、上下文字数 3830 → 3163，
+   四项指标完全不变。按 token 计费，等于每轮问答直接省下近六分之一成本。
+
+### 单次 run 的方差（解读前必读）
+
+同一模型、`temperature=0`、同一份缓存，重跑仍会翻转约 1 道题 —— 50 题基数下就是 **±2.5 个百分点**。
+所以：
+
+- 单题级差异**不解读**（A3 在不同 run 里 0.850 / 0.875 都出现过，属于噪声）；
+- 要看的是"同一结论是否在多次 run 里稳定复现"：HyDE 不敌 A2、精排稳定 +5 点，这两条在三次 run 里都成立；
+- 想把误差压到 1 个点以内，评测集至少要扩到 150 题以上（需要第二、三本手册）。
+
+### 换模型实测（qwen-flash → qwen3.8-flash）
+
+用同一套 50 题、同一语料，把 LLM 换成 `qwen3.8-flash` 重跑（详细对照见 `eval/model-compare.md`）：
+
+| 指标 | qwen-flash | qwen3.8-flash（默认思考） | qwen3.8-flash（关思考） |
+| --- | --- | --- | --- |
+| A1/A2/A4/A5 检索指标 | 完全一致 | 完全一致 | 完全一致 |
+| A3 Hit@5 / MRR@5 | 0.850 / 0.725 | 0.850 / 0.729 | 0.875 / 0.728 |
+| HyDE 冷启动 p50 / p95 | 2.9 s / 3.7 s | **16.0 s / 47.6 s** | 5.2 s / 6.6 s |
+| 答案层 8 题平均延迟 | 1.7 s | 10.0 s | 2.8 s |
+| 该弃答的 2 题答对 | 1 / 2 | 2 / 2 | 2 / 2 |
+
+三点结论：
+
+1. **检索指标不动**——A1/A2/A4/A5 逐位相同，说明瓶颈在切分与融合，不在 LLM 选型；
+   A3 的 ±0.025 是单题翻转（50 题里 1 题 = 2.5 个点），不构成模型优劣证据。
+2. **思考模式必须关**：默认思考下 HyDE p95 47.6 s，在线问答不可用。
+   `AIClients` 已支持 `LLM_ENABLE_THINKING` 开关，`.env` 里默认 false。
+3. **关思考后值得换**：弃答从 1/2 提升到 2/2（qwen-flash 会编"电池仓有一颗螺丝"），
+   代价是 1.6 倍延迟。
+
+### 已知 badcase（详见 `eval/badcase.md`）
+
+`技术指标说明` 是一整段 457 字的单行文本，塞了十余个互不相关的指标（重量、尺寸、电池型号、
+频宽、海拔……）。它作为**一个切片**参与检索时，向量被平均化，导致"显示屏几位数""尺寸多少"
+"用什么电池"这类参数型问题都召不回它（F01 / F03 / M08 三题均未命中）。
+修法是把这段按"指标项"拆成键值对切片（或建独立的参数索引），预期能把 `fact` 类从 0.917 拉到 1.0。
+
 ## 已知限制与规划
 
-- **商品名对齐依赖 item_name 集合**：对齐检索基于导入阶段写入的 `item_name` 集合；若从未成功导入手册（集合为空），节点会退化为「直接用 LLM 抽取结果过滤」，此时可能召回为空。暂不支持人工纠错反馈回流。
+- **HyDE 在当前业务上是负收益**：三次实测均未超过纯混合检索，且每题多一次 LLM 调用。
+  代码保留，但建议在 `main_graph` 里默认不接该分支（开关待补），详见「评测」一节。
+- **`技术指标说明` 切片粒度过粗**：该章节是一整段 457 字的单行文本，混了十余个互不相关的指标，
+  向量被平均化，导致"显示屏几位数""尺寸多少""用什么电池"三类参数问题召不回（F01 / F03 / M08）。
+  修法是按指标项拆成键值对切片，预期把 `fact` 类 Hit@5 从 0.917 拉到 1.0。
+- **Milvus 现存集合数据不可用**：实测 `kb_chunks_v1` 里的 `content` 是编码损坏后的替换字符，
+  `item_name` 存着 `{"item_name": "..."}` 整段 JSON。评测因此改为从干净的 Markdown 重新切分；
+  线上要恢复，必须在导入链路写库前加编码断言并重新导入。
+- **评测规模有限**：单本手册 → 22 个切片、50 道题，误差约 ±2.5 个百分点；
+  跨手册对比、item_name 过滤的必要性都无法在当前语料上验证。
+- **商品名对齐依赖 item_name 集合**：若从未成功导入手册（集合为空），节点会退化为
+  「直接用 LLM 抽取结果过滤」，此时可能召回为空。暂不支持人工纠错反馈回流。
 - **任务状态为进程内存**：`task_util` 使用内存字典维护进度与结果，服务重启后任务状态丢失；后续将迁移至 Redis。
-- **查询侧进度轮询**：`/status/{task_id}` 目前仅由导入服务提供，`chat.html` 已预留轮询入口，接入后可在对话页展示检索阶段进度。
-- **无鉴权 / 多租户**：当前面向内网或本地部署，生产环境建议前置网关做鉴权、限流与文件类型校验。
-- **规划**：BM25 独立召回通道、切片去重与增量更新、答案引用溯源（页码级）、多模态检索（以图搜手册）、Docker Compose 一键编排。
+- **查询侧进度轮询**：`/status/{task_id}` 目前仅由导入服务提供，`chat.html` 已预留轮询入口。
+- **无鉴权 / 多租户**：当前面向内网或本地部署；上传缺少类型/大小/文件名校验，生产需前置网关。
+- **规划**：技术指标拆分重切、HyDE 默认下线、BM25 独立召回、切片去重与增量更新、
+  答案引用溯源（页码级）、多模态检索（以图搜手册）、Docker Compose 一键编排。
 
 ## 更新记录
+
+**2026-11-12 · 评测层落地 + 检索参数接线 + 模型切换**
+
+新增 `eval/`（1958 行）：50 题分层评测集、5 组检索消融、答案层模型 A/B、23 个单测、8 条归因 badcase。
+
+| 位置 | 原状 | 调整 |
+| --- | --- | --- |
+| `EMBEDDING_SEARCH_LIMIT` / `HYDE_SEARCH_LIMIT` | 只定义、没人读，实际每路固定召回 5 条，与 README 声明不符 | 接入 `vector_search` / `hyde_search`，召回条数真正由配置决定 |
+| `WeightedRanker` 权重 | 硬编码 `(0.5, 0.5)` | 改为 `EMBEDDING_DENSE_WEIGHT` / `EMBEDDING_SPARSE_WEIGHT` |
+| 检索模式 | 只有混合检索 | `create_hybrid_search_requests(mode=...)` 支持 `dense` / `sparse` / `hybrid`，单路时自动只传一个权重 |
+| `AIClients._create_llm_openai` | 固定 `temperature=0`，无思考模式控制 | 新增 `LLM_ENABLE_THINKING`（留空不下发）：qwen3 系列默认思考，HyDE 单次 16 s、p95 47 s，必须可关 |
+| 默认模型 | `qwen-flash` | `qwen3.8-flash` + 关思考：弃答正确率 1/2 → 2/2，代价 1.6 倍延迟 |
+| HyDE 缓存键（`eval/hyde.py`） | 只有 `query + item_names` | 加入模型名与思考模式——否则换模型会命中旧缓存，A/B 变成自欺欺人 |
+| 实测结论 | — | 检索指标与 LLM 选型无关（A1/A2/A4/A5 逐位相同）；瓶颈在切分与融合。详见 `eval/model-compare.md` |
 
 **2026-11-11 · 查询图拓扑调整（`query_process/main_graph.py`）**
 
