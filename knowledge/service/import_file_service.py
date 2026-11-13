@@ -11,6 +11,7 @@ from knowledge.core.paths import get_local_base_dir
 from knowledge.processor.import_process.exceptions import FileProcessingError, MinioError
 from knowledge.processor.import_process.main_graph import kb_import_graph
 from knowledge.utils.client.storage_clients import StorageClients
+from knowledge.utils.log_context import bind_task_id
 from knowledge.utils.task_util import (
     TASK_STATUS_COMPLETED,
     TASK_STATUS_FAILED,
@@ -38,6 +39,7 @@ class ImportFileService:
 
     def run_langgraph_import(self,task_id, file_dir, import_file_path):
         """开启langgraph流程，完成文件导入milvus [7个步骤]"""
+        bind_task_id(task_id)   # 后续这个任务里所有日志都会带上 task_id
         update_task_status(task_id,TASK_STATUS_PROCESSING)
 
         try:

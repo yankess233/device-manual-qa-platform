@@ -12,6 +12,7 @@ from knowledge.core.paths import get_front_page_dir
 from knowledge.processor.import_process.base import setup_logging
 from knowledge.schema.upload_schema import TaskStatusResponse, UploadResponse
 from knowledge.service.import_file_service import ImportFileService
+from knowledge.utils.log_context import TimingMiddleware
 from knowledge.utils.task_util import get_task_info
 from knowledge.utils.upload_guard import UploadRejected
 
@@ -60,6 +61,8 @@ def create_app():
     app = FastAPI(description="知识库导入",version="v1.0")
 
     # 跨域设置
+    app.add_middleware(TimingMiddleware)
+
     app.add_middleware(
         CORSMiddleware,
         allow_origins=allowed_origins(),  # 白名单来自 ALLOWED_ORIGINS，默认只放行本机页面

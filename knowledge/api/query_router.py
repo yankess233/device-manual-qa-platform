@@ -14,6 +14,7 @@ from knowledge.core.paths import get_front_page_dir
 from knowledge.processor.import_process.base import setup_logging
 from knowledge.schema.query_schema import QueryRequest, QueryResponse, StreamSubmitResponse
 from knowledge.service.query_service import QueryService
+from knowledge.utils.log_context import TimingMiddleware
 from knowledge.utils.sse_util import create_sse_queue, sse_generator
 
 
@@ -101,6 +102,8 @@ def create_app():
     app = FastAPI(description="知识库检索", version="v1.0")
 
     # 跨域设置
+    app.add_middleware(TimingMiddleware)
+
     app.add_middleware(
         CORSMiddleware,
         allow_origins=allowed_origins(),  # 白名单来自 ALLOWED_ORIGINS，默认只放行本机页面

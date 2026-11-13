@@ -3,6 +3,7 @@ import uuid
 from typing import Any, Dict, List
 
 from knowledge.processor.query_process.main_graph import query_app
+from knowledge.utils.log_context import bind_task_id
 from knowledge.utils.task_util import (
     TASK_STATUS_COMPLETED,
     TASK_STATUS_FAILED,
@@ -18,6 +19,7 @@ class QueryService:
 
     def run_query_graph(self, task_id, session_id, query, is_stream):
 
+        bind_task_id(task_id)   # 后续这个任务里所有日志都会带上 task_id
         try:
             update_task_status(task_id=task_id, status_name=TASK_STATUS_PROCESSING)
             state = {

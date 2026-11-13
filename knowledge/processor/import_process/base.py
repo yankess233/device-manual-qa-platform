@@ -10,6 +10,7 @@ from typing import Optional, TypeVar
 
 from knowledge.processor.import_process.config import ImportConfig, get_config
 from knowledge.processor.import_process.exceptions import ImportProcessError
+from knowledge.utils.log_context import log_node_end, setup_json_logging
 from knowledge.utils.task_util import add_done_task, add_node_duration, add_running_task
 
 T = TypeVar("T")  # 泛型状态类型
@@ -84,6 +85,7 @@ class BaseNode(ABC):
             if task_id:
                 add_done_task(task_id, self.name)
                 add_node_duration(task_id, self.name, duration)
+            log_node_end(self.logger, self.name, duration)
 
             return result
         except Exception as e:
@@ -125,14 +127,5 @@ class BaseNode(ABC):
 
 # 配置日志格式
 def setup_logging(level: int = logging.INFO):
-    """
-    配置导入流程日志
-
-    Args:
-        level: 日志级别
-    """
-    logging.basicConfig(
-        level=level,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S'
-    )
+    """统一日志入口：JSON 结构化 + request_id/task_id（见 knowledge/utils/log_context.py）"""
+    setup_json_logging(level)

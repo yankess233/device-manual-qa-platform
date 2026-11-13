@@ -408,6 +408,30 @@ python3 verify.py --host 127.0.0.1         # 端口与健康自检
 与 `depends_on: condition: service_healthy`。离线 tar 导入、模型目录挂载、GPU 版写法、
 常见故障排查见 [`deploy/README.md`](deploy/README.md)。
 
+
+### 9. 可观测性与压测
+
+**结构化日志**：服务默认输出 JSON（`LOG_FORMAT=json`，本地调试可设 `text`），
+每条日志都带 `request_id` / `task_id`，节点完成时额外带 `node` 与 `duration_ms`：
+
+```bash
+docker compose logs -f query-app | jq 'select(.task_id=="a1b2c3d4")'
+docker compose logs query-app | jq -r 'select(.msg=="node_end") | "\(.node)\t\(.duration_ms)"'
+```
+
+每个 HTTP 响应都带 `x-request-id` 头，可直接拿它去日志里搜整条链路。
+
+**压测**：`loadtest/locustfile.py` 覆盖问答与状态轮询两条链路。
+
+```bash
+pip install locust
+locust -f loadtest/locustfile.py --headless -u 5  -r 1 -t 2m --csv=lt-5  --host http://127.0.0.1:8001
+locust -f loadtest/locustfile.py --headless -u 20 -r 5 -t 2m --csv=lt-20 --host http://127.0.0.1:8001
+```
+
+两个前提：压测前先手动问一次做**模型预热**（否则首批请求会污染 P95）；
+CPU 部署下把 `-u` 从 5 起步，虚拟机内存不足时先降并发。
+
 ## 接口文档
 
 启动后可直接访问 `/docs`（FastAPI 自带 Swagger）。
