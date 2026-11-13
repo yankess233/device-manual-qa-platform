@@ -135,3 +135,7 @@ temp_files/
 eval/.cache/
 # 实验输出：本地留档，跑完只提交 summary.md 的结论进 README
 eval/results/
+
+# 本机专用：VM 环境文件与运维脚本
+deploy/.env.vm
+tools/vm_ssh.py

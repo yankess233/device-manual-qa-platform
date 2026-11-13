@@ -1,5 +1,12 @@
 # 虚拟机 Docker 部署
 
+> **本机实测（192.168.10.150，Ubuntu 22.04 / 3.8G 内存 / 29G 磁盘）**
+> 基础设施五个容器全部 healthy：`milvus-standalone`(19530/9091)、`kb-minio`(9000/9001)、
+> `milvus-etcd`、`kb-mongodb`(27017)、`kb-redis`(仅容器网络内可见)。
+> 宿主机 `pymilvus` 已能连上并读到 `kb_chunks_v1` / `kb_item_names_v1`。
+> **应用容器没有部署**：镜像约 5~6G，该机清理后仅剩 3.5G，磁盘不够；应用继续跑在宿主机上，
+> 通过 `192.168.10.150` 访问这些容器。要上应用容器，先把虚拟机磁盘扩到 50G 以上。
+
 面向的场景：**镜像来自离线 tar，全部服务跑在一台 Linux 虚拟机的 Docker 里**。
 当前环境里的 192.168.10.150 就是这台机器。
 
@@ -189,6 +196,9 @@ curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8001/docs   # 200
 | 图片链接 404 | `MINIO_ENDPOINT` 被写成 `127.0.0.1`，浏览器在别的机器上访问不到 | 图片 URL 由 MinIO 生成，跨机器访问要保证 `9000` 端口对外可达 |
 | `docker compose` 仍去联网拉镜像 | 本地 tar 的 tag 与 compose 不一致 | `docker images` 对齐 tag，或 `docker tag` 重命名 |
 | `deploy/.env` 里中文注释导致解析异常 | Windows 换行/编码 | 用 `file .env` 确认是 UTF-8；必要时 `sed -i 's/\r$//' .env` |
+| `permission denied ... /var/run/docker.sock` | 当前用户不在 docker 组 | `sudo usermod -aG docker $USER` 后重新登录，或命令前加 `sudo` |
+| 磁盘写满导致 milvus 起不来 | 镜像+tar 文件占地 | 镜像已 `docker load` 后可删 tar（原始文件在宿主机留档）；`df -h /` 至少留 5G |
+| 3.8G 内存下 milvus 起得来吗 | 实测可以：5 个容器共约占 1.5G，剩余 2G 可用 | 但**不要**再叠应用容器（torch+BGE 需要 2G+） |
 
 ---
 
