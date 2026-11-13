@@ -1,5 +1,7 @@
 # 企业级设备手册智能问答平台
 
+[![CI](https://github.com/yankess233/device-manual-qa-platform/actions/workflows/ci.yml/badge.svg)](https://github.com/yankess233/device-manual-qa-platform/actions/workflows/ci.yml)
+
 > 把厚重的 PDF / Markdown 设备手册变成可检索、可对话、能配图回答的知识库。
 > 基于 **LangGraph + Milvus + BGE-M3 + MinerU + 大模型** 的端到端 RAG 工程实现。
 
