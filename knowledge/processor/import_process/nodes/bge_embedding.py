@@ -6,15 +6,14 @@ BGE-M3 切片向量化节点
 为文档切片生成稠密和稀疏向量
 """
 
-import os
 import json
-from typing import Dict, List, Any
 from pathlib import Path
+from typing import Any, Dict, List
 
 from knowledge.processor.import_process.base import BaseNode, setup_logging
-from knowledge.processor.import_process.state import ImportGraphState
-from knowledge.processor.import_process.exceptions import ValidationError, EmbeddingError
 from knowledge.processor.import_process.config import get_config
+from knowledge.processor.import_process.exceptions import ValidationError
+from knowledge.processor.import_process.state import ImportGraphState
 from knowledge.utils.client.ai_clients import AIClients
 
 
@@ -70,7 +69,7 @@ class BgeEmbeddingChunksNode(BaseNode):
             embedding_result = bge_m3_model.encode_documents(documents=embedding_contents)
 
             if not embedding_result:
-                self.logger.warning(f"嵌入后的结果不存在...")
+                self.logger.warning("嵌入后的结果不存在...")
                 return batch
         except Exception as e:
             self.logger.warning(f"嵌入向量嵌入失败...{str(e)}")
@@ -88,7 +87,7 @@ class BgeEmbeddingChunksNode(BaseNode):
             end_ind_ptr = ind_ptr[index + 1]
             token_id = csr_array.indices[start_ind_ptr:end_ind_ptr].tolist()
             weight = csr_array.data[start_ind_ptr:end_ind_ptr].tolist()
-            sparse_vector = dict(zip(token_id, weight))
+            sparse_vector = dict(zip(token_id, weight, strict=False))
 
             # 3.3 注入
             chunk['dense_vector'] = dense_vector
@@ -106,7 +105,7 @@ class BgeEmbeddingChunksNode(BaseNode):
         chunks = state.get('chunks')
 
         if not chunks or not isinstance(chunks, list):
-            raise ValidationError(f"chunks为空或者无效", self.name)
+            raise ValidationError("chunks为空或者无效", self.name)
 
         self.logger.info(f"嵌入的块数：{len(chunks)}")
         return chunks, config

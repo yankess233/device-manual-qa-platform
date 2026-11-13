@@ -2,16 +2,20 @@
 
 定义统一的节点接口规范，提供通用功能。
 """
-from abc import ABC, abstractmethod
-from typing import TypeVar, Optional
 import logging
+from abc import ABC, abstractmethod
+from typing import Optional, TypeVar
 
 from knowledge.processor.query_process.config import QueryConfig, get_config
 from knowledge.processor.query_process.exceptions import QueryProcessError
-from knowledge.utils.sse_util import push_sse_event, SSEEvent
-from knowledge.utils.task_util import add_running_task, add_done_task, get_task_status, get_running_task_list, \
-    get_done_task_list
-
+from knowledge.utils.sse_util import SSEEvent, push_sse_event
+from knowledge.utils.task_util import (
+    add_done_task,
+    add_running_task,
+    get_done_task_list,
+    get_running_task_list,
+    get_task_status,
+)
 
 T = TypeVar("T")  # 泛型状态类型
 
@@ -93,7 +97,7 @@ class BaseNode(ABC):
                 message=str(e),
                 node_name=self.name,
                 cause=e
-            )
+            ) from e
 
     @abstractmethod
     def process(self, state: T) -> T:

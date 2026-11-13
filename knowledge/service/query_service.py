@@ -1,10 +1,15 @@
 import logging
 import uuid
-from typing import List, Dict, Any
+from typing import Any, Dict, List
 
 from knowledge.processor.query_process.main_graph import query_app
-from knowledge.utils.task_util import update_task_status, TASK_STATUS_PROCESSING, TASK_STATUS_COMPLETED, \
-    TASK_STATUS_FAILED, get_task_result
+from knowledge.utils.task_util import (
+    TASK_STATUS_COMPLETED,
+    TASK_STATUS_FAILED,
+    TASK_STATUS_PROCESSING,
+    get_task_result,
+    update_task_status,
+)
 
 logger = logging.getLogger(__name__)
 

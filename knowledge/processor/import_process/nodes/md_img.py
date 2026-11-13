@@ -6,18 +6,19 @@ from collections import deque
 from dataclasses import dataclass
 from logging import Logger
 from pathlib import Path
-from threading import RLock, Lock
-from typing import Tuple, List, Optional, Dict, Deque
+from threading import Lock
+from typing import Deque, Dict, List, Tuple
 
 from langchain_openai import OpenAI
 
-from knowledge.processor.import_process.base import BaseNode, T, setup_logging
-from knowledge.processor.import_process.exceptions import StateFieldError, FileProcessingError, ValidationError
+from knowledge.processor.import_process.base import BaseNode, setup_logging
+from knowledge.processor.import_process.exceptions import (
+    FileProcessingError,
+    StateFieldError,
+)
 from knowledge.processor.import_process.state import ImportGraphState
 from knowledge.utils.client.ai_clients import AIClients
 from knowledge.utils.client.storage_clients import StorageClients
-
-
 
 # ── 数据模型 ──
 
@@ -85,7 +86,7 @@ class ImageScanner:
             if not image_path.is_file():
                 continue
 
-            if not image_path.suffix in image_extensions:
+            if image_path.suffix not in image_extensions:
                 continue
 
             ctx =self._find_context(md_content,image_path.name,context_length)
@@ -317,7 +318,7 @@ class ImageUploader:
         remote_urls: Dict[str, str] = {}
         try:
             minio_client = StorageClients.get_minio_client()
-        except Exception as e:
+        except Exception:
             #主降级处理，当连接获取不到，所有图片都降级处理
             for image_info in imageinfo_list:
                 remote_urls[image_info.name] = image_info.path
@@ -331,7 +332,7 @@ class ImageUploader:
                                      file_path=image_info.path)     #本地图片
                 remote_url = f"{minio_endpoint}/{minio_bucket}/{document_name}/{image_info.name}"
                 remote_urls[image_info.name] = remote_url #上传成功，设置为远程地址
-            except Exception as e:
+            except Exception:
                 #二级降级处理  只针对上传失败某个图片进行降级,设置为本地图片地址
                 remote_urls[image_info.name] = image_info.path
         return remote_urls

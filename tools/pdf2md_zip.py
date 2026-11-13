@@ -21,7 +21,6 @@ import argparse
 import re
 import shutil
 import subprocess
-import sys
 import zipfile
 from pathlib import Path
 

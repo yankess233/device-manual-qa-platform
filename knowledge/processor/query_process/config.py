@@ -5,11 +5,12 @@
 集中管理所有配置项，支持环境变量覆盖。所有属性均采用懒加载模式。
 """
 
+import os
 from dataclasses import dataclass, field
 from typing import Optional
-import os
 
 from dotenv import load_dotenv
+
 load_dotenv()
 
 

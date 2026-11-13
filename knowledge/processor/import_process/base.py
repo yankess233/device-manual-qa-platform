@@ -3,14 +3,14 @@
 
 定义统一的节点接口规范，提供通用功能
 """
+import logging
 import time
 from abc import ABC, abstractmethod
-from typing import TypeVar, Optional
-import logging
+from typing import Optional, TypeVar
 
 from knowledge.processor.import_process.config import ImportConfig, get_config
 from knowledge.processor.import_process.exceptions import ImportProcessError
-from knowledge.utils.task_util import add_running_task, add_done_task, add_node_duration
+from knowledge.utils.task_util import add_done_task, add_node_duration, add_running_task
 
 T = TypeVar("T")  # 泛型状态类型
 
@@ -92,7 +92,7 @@ class BaseNode(ABC):
                 message=str(e),
                 node_name=self.name,
                 cause=e
-            )
+            ) from e
 
     @abstractmethod
     def process(self, state: T) -> T:

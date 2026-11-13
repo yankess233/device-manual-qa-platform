@@ -1,7 +1,8 @@
+import base64
 import os
 
 from openai import OpenAI
-import base64
+
 # 初始化客户端
 client = OpenAI(
     api_key=os.getenv("DASHSCOPE_API_KEY"),      #  老师已经配置在系统环境变量中了。

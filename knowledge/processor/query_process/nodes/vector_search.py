@@ -1,5 +1,5 @@
 import json
-from typing import Dict, Tuple, Union
+from typing import Dict, Tuple
 
 from knowledge.processor.query_process.base import BaseNode
 from knowledge.processor.query_process.exceptions import StateFieldError
@@ -7,7 +7,11 @@ from knowledge.processor.query_process.state import QueryGraphState
 from knowledge.utils.client.ai_clients import AIClients
 from knowledge.utils.client.storage_clients import StorageClients
 from knowledge.utils.embedding_util import generate_bge_m3_hybrid_vectors
-from knowledge.utils.milvus_util import create_hybrid_search_requests, item_names_filter, execute_hybrid_search_query
+from knowledge.utils.milvus_util import (
+    create_hybrid_search_requests,
+    execute_hybrid_search_query,
+    item_names_filter,
+)
 
 
 class VectorSearchNode(BaseNode):

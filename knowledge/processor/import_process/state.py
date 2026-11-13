@@ -8,9 +8,8 @@
 
 """
 
-from typing import TypedDict, List
-
 import copy
+from typing import List, TypedDict
 
 
 class ImportGraphState(TypedDict, total=False):

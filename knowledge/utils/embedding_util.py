@@ -1,4 +1,5 @@
-from typing import  List
+from typing import List
+
 from pymilvus.model.hybrid import BGEM3EmbeddingFunction
 
 
@@ -53,7 +54,7 @@ def generate_bge_m3_hybrid_vectors(model: BGEM3EmbeddingFunction, embedding_docu
             end = csr_array.indptr[index + 1]
             token_ids = csr_array.indices[start:end].tolist()
             weights = csr_array.data[start:end].tolist()
-            processed_sparse.append(dict(zip(token_ids, weights)))
+            processed_sparse.append(dict(zip(token_ids, weights, strict=False)))
     except (IndexError, AttributeError) as e:
         raise RuntimeError(f"稀疏向量解析失败（CSR 矩阵结构异常）: {e}") from e
 

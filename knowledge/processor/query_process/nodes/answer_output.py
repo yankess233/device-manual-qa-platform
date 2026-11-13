@@ -1,11 +1,11 @@
-from typing import Dict, List, Any, Tuple
+from typing import Any, Dict, List, Tuple
 
 from knowledge.processor.query_process.base import BaseNode
 from knowledge.processor.query_process.state import QueryGraphState
 from knowledge.prompt.query_prompt import ANSWER_PROMPT
 from knowledge.utils.client.ai_clients import AIClients
 from knowledge.utils.mongo_history_util import save_chat_message
-from knowledge.utils.sse_util import push_sse_event, SSEEvent
+from knowledge.utils.sse_util import SSEEvent, push_sse_event
 from knowledge.utils.task_util import set_task_result
 
 
@@ -104,7 +104,7 @@ class AnswerOutputNode(BaseNode):
             llm_client = AIClients.get_llm_openai(False)
         except Exception as e:
             self.logger.warning(f"获取LLM客户端失败:{e}")
-            raise ConnectionError("获取LLM客户端失败")
+            raise ConnectionError("获取LLM客户端失败") from e
 
         prompt = state.get("prompt", "")
         if state.get("is_stream"):
@@ -295,15 +295,14 @@ class AnswerOutputNode(BaseNode):
 
 # 流式测试
 if __name__ == "__main__":
-    from dotenv import load_dotenv
-    import json
     import threading
-    import time
+
+    from dotenv import load_dotenv
 
     load_dotenv()
 
     from knowledge.processor.query_process.base import setup_logging
-    from knowledge.utils.sse_util import create_sse_queue, get_sse_queue, remove_sse_queue
+    from knowledge.utils.sse_util import create_sse_queue, remove_sse_queue
 
     setup_logging()
 

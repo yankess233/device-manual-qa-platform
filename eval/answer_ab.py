@@ -243,7 +243,7 @@ def rescore(run_dir: str, dataset_path: str) -> int:
         for label in row["answers"]:
             if label not in labels:
                 labels.append(label)
-        for label, block in row["answers"].items():
+        for block in row["answers"].values():
             block["verdict"] = verdict(items[row["id"]], block["answer"])
     write_outputs(rows, labels, run_dir)
     return 0

@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-from knowledge.processor.import_process.base import BaseNode, T, setup_logging
+from knowledge.processor.import_process.base import BaseNode, setup_logging
 from knowledge.processor.import_process.exceptions import ValidationError
 from knowledge.processor.import_process.state import ImportGraphState
 
@@ -17,11 +17,10 @@ class EntryNode(BaseNode):
 
         self.log_step("step1","获取文件路径")
         import_file_path = state.get("import_file_path","")
-        file_dir = state.get("file_dir","")
 
         self.log_step("step2","检测文件路径是否为空")
         if not import_file_path:
-            raise ValidationError(f"文件不存在",self.name)
+            raise ValidationError("文件不存在",self.name)
 
         path = Path(import_file_path)
 

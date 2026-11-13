@@ -85,7 +85,7 @@ def weighted_rank(
         if not hits or weight <= 0:
             continue
         scores = _minmax(np.array([hit.score for hit in hits], dtype=np.float32))
-        for hit, norm in zip(hits, scores):
+        for hit, norm in zip(hits, scores, strict=False):
             merged[hit.chunk_id] = merged.get(hit.chunk_id, 0.0) + weight * float(norm)
     ranked = sorted(merged.items(), key=lambda kv: kv[1], reverse=True)
     return [Hit(chunk_id=cid, score=score) for cid, score in ranked[:limit]]
@@ -102,7 +102,7 @@ def rrf_fuse(
     if len(weights) != len(rank_lists):
         raise ValueError("weights 数量必须与 rank_lists 一致")
     scores: dict[str, float] = {}
-    for hits, weight in zip(rank_lists, weights):
+    for hits, weight in zip(rank_lists, weights, strict=False):
         for rank, hit in enumerate(hits, start=1):
             scores[hit.chunk_id] = scores.get(hit.chunk_id, 0.0) + weight / (k + rank)
     ranked = sorted(scores.items(), key=lambda kv: kv[1], reverse=True)
@@ -244,7 +244,7 @@ class CrossEncoderReranker:
             raw = self._model.compute_score(pairs, normalize=True)
             if isinstance(raw, (int, float)):
                 raw = [raw]
-            for content, value in zip(missing, raw):
+            for content, value in zip(missing, raw, strict=False):
                 self._cache[self._key(query, content)] = float(value)
             self._save()
         return [self._cache[self._key(query, content)] for content in contents]
@@ -269,6 +269,6 @@ def rerank_hits(reindex: HybridIndex, query: str, hits: Iterable[Hit],
     scores = reranker.score(query, contents)
     rescored = [
         Hit(chunk_id=hit.chunk_id, score=score)
-        for hit, score in zip(hit_list, scores)
+        for hit, score in zip(hit_list, scores, strict=False)
     ]
     return sorted(rescored, key=lambda h: h.score, reverse=True)

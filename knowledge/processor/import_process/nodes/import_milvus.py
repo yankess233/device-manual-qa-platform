@@ -9,15 +9,16 @@
 """
 
 import logging
-from typing import Sequence, List, Any, Dict, Optional, Tuple
 from dataclasses import dataclass
+from typing import Any, Dict, List, Optional, Sequence, Tuple
+
 from pymilvus import DataType, MilvusClient
 from pymilvus.orm.schema import CollectionSchema
 
 from knowledge.processor.import_process.base import BaseNode, setup_logging
-from knowledge.processor.import_process.state import ImportGraphState
+from knowledge.processor.import_process.config import ImportConfig, get_config
 from knowledge.processor.import_process.exceptions import ValidationError
-from knowledge.processor.import_process.config import get_config, ImportConfig
+from knowledge.processor.import_process.state import ImportGraphState
 from knowledge.utils.client.storage_clients import StorageClients
 
 logger = logging.getLogger(__name__)
@@ -88,7 +89,7 @@ class _MilvusSchemaBuilder:
                 kwargs['max_length'] = scalar_field.max_length
             schema.add_field(**kwargs)
 
-        logger.info(f"构建约束(schema)完成...")
+        logger.info("构建约束(schema)完成...")
         return schema
 
 
@@ -151,7 +152,7 @@ class _MilvusInserter:
         return chunks
 
     def _fill_chunk_ids(self, chunks: List[Dict[str, Any]], ids: List[Any]):
-        for chunk, id in zip(chunks, ids):
+        for chunk, id in zip(chunks, ids, strict=False):
             chunk["chunk_id"] = id
 
 
@@ -179,7 +180,7 @@ class ImportMilvusNode(BaseNode):
             return state
 
         # 3. 获取集合名字
-        collection = getattr(config, 'chunks_collection')
+        collection = config.chunks_collection
 
         # 4. 确保集合存在
         self._ensure_has_collection(milvus_client, collection, dim)
@@ -240,8 +241,8 @@ class ImportMilvusNode(BaseNode):
         )
 
 
-from pathlib import Path
 import json
+from pathlib import Path
 
 if __name__ == "__main__":
     setup_logging()

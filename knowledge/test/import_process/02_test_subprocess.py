@@ -44,7 +44,6 @@ print(result.stdout)
 
 # ---------------- 解压并校验（4.x 的 zip 里是 markdown.md / middle_json.json / images/） ----------------
 import zipfile
-from pathlib import Path
 
 zip_path = Path(OUT_DIR) / f"{Path(PDF_PATH).stem}.zip"
 dest_dir = Path(OUT_DIR) / Path(PDF_PATH).stem

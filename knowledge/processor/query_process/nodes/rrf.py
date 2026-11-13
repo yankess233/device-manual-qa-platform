@@ -1,4 +1,4 @@
-from typing import List, Dict, Any, Tuple
+from typing import Any, Dict, List, Tuple
 
 from knowledge.processor.query_process.base import BaseNode
 from knowledge.processor.query_process.state import QueryGraphState

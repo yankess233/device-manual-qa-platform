@@ -1,4 +1,3 @@
-import os
 import logging
 
 logger = logging.getLogger(__name__)
@@ -8,8 +7,9 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from typing import Optional, List, Tuple, Any, Dict
-from pymilvus import MilvusClient, WeightedRanker, AnnSearchRequest
+from typing import Any, Dict, List, Optional, Tuple
+
+from pymilvus import AnnSearchRequest, MilvusClient, WeightedRanker
 
 milvus_client: Optional[MilvusClient] = None
 

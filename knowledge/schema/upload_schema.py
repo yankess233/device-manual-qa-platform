@@ -1,4 +1,5 @@
-from typing import List, Dict
+from typing import Dict, List
+
 from openai import BaseModel
 from pydantic import Field
 

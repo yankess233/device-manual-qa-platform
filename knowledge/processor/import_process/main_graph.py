@@ -129,7 +129,9 @@ def run_import_graph(import_file_path: str, file_dir: str) -> dict:
     # "is_pdf_read_enabled": False,  # 默认值
     # "is_md_read_enabled": False,  # 默认值
     # "md_path": None,  # 默认值
-    init_state = create_default_state(**state)
+    # TODO: 这里算出了带默认值的初始状态，但下面 stream 用的是原始 state，
+    # 疑似缺陷（默认值未生效）。行为变更需单独验证，先保留并标注。
+    _init_state = create_default_state(**state)  # noqa: F841
     final_state = None
     # 启动  LangGraph 工作流并流式执行（streaming execution）。
     # kb_import_graph_app: 已编译的 LangGraph 应用对象

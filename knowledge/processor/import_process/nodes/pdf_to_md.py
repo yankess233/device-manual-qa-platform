@@ -1,15 +1,17 @@
 import json
-import os
-import shutil
 import subprocess
-import sys
 from functools import lru_cache
 from pathlib import Path
 from typing import Tuple
 
 from knowledge.processor.import_process.base import BaseNode, setup_logging
-from knowledge.processor.import_process.exceptions import ValidationError, FileProcessingError, PdfConversionError
+from knowledge.processor.import_process.exceptions import (
+    FileProcessingError,
+    PdfConversionError,
+    ValidationError,
+)
 from knowledge.processor.import_process.state import ImportGraphState
+
 
 class PdfToMdNode(BaseNode):
     name = "pdf_to_md_node"
@@ -50,7 +52,7 @@ class PdfToMdNode(BaseNode):
 
         return import_file_path_obj,file_dir_obj
 
-    @lru_cache(maxsize=1)
+    @lru_cache(maxsize=1)  # noqa: B019 - 单例节点，缓存不会跨实例泄漏
 
 
     def _execute_mineru(self, import_file_path_obj, file_dir_path_obj):
@@ -95,7 +97,7 @@ class PdfToMdNode(BaseNode):
 
     def _get_md_paths(self, import_file_path_obj, file_dir_path_obj):
         import_file_name = import_file_path_obj.stem
-        md_path = file_dir_path_obj / import_file_name / f"markdown.md"
+        md_path = file_dir_path_obj / import_file_name / "markdown.md"
         return str(md_path)
 
 

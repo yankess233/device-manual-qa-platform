@@ -1,7 +1,5 @@
 import os
 
-
-
 os.environ["LANGCHAIN_TRACING_V2"] = "false"
 
 # knowledge/processor/query_process/main_graph.py
@@ -11,18 +9,19 @@ os.environ["LANGCHAIN_TRACING_V2"] = "false"
 使用 LangGraph 构建知识库查询工作流。
 """
 
-from langgraph.graph import StateGraph, END
-from langgraph.graph.state import CompiledStateGraph
 from dotenv import load_dotenv
+from langgraph.graph import END, StateGraph
+from langgraph.graph.state import CompiledStateGraph
 
-from knowledge.processor.query_process.state import QueryGraphState
 from knowledge.processor.query_process.nodes.answer_output import AnswerOutputNode
-from knowledge.processor.query_process.nodes.item_name_confirm import ItemNameConfirmNode
-from knowledge.processor.query_process.nodes.vector_search import VectorSearchNode
 from knowledge.processor.query_process.nodes.hyde_search import HyDeSearchNode
-from knowledge.processor.query_process.nodes.rrf import RrfNode
+from knowledge.processor.query_process.nodes.item_name_confirm import ItemNameConfirmNode
 from knowledge.processor.query_process.nodes.rerank import RerankNode
+from knowledge.processor.query_process.nodes.rrf import RrfNode
+from knowledge.processor.query_process.nodes.vector_search import VectorSearchNode
 from knowledge.processor.query_process.nodes.web_search_mcp import WebSearchMcpNode
+from knowledge.processor.query_process.state import QueryGraphState
+
 # 加载环境变量
 load_dotenv()
 
@@ -172,7 +171,7 @@ if __name__ == "__main__":
     #result_1 = query_app.stream(mock_state_1) #可以查看到每一个节点的输出
     #与LLM中的llm.invoke()和 llm.stream()的作用不同。llm.stream()表示流式输出。
 
-    print(f"\n  【结果】:")
+    print("\n  【结果】:")
     print(f"  商品名: {result_1.get('item_names')}")
     print(f"  重写查询: {result_1.get('rewritten_query')}")
     answer_1 = result_1.get("answer", "")

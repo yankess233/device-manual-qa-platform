@@ -2,7 +2,8 @@ import asyncio
 import json
 import logging
 import queue
-from typing import Dict, Any, Optional, AsyncGenerator
+from typing import Any, AsyncGenerator, Dict, Optional
+
 from fastapi import Request
 
 
@@ -97,9 +98,9 @@ async def sse_generator(task_id: str, request: Request) -> AsyncGenerator:
                 # 3.5 打包返回
                 yield _sse_pack(event_type, event_data)  # 打包并且通过yield返回
             except queue.Empty:
-                logging.info(f"队列为空...请稍等")
+                logging.info("队列为空...请稍等")
                 continue
-    except  (ConnectionResetError, BrokenPipeError) as e:
+    except  (ConnectionResetError, BrokenPipeError):
         # 客户端中断 关闭了窗口或者浏览器
         return
 

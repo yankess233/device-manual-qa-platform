@@ -5,8 +5,8 @@
 定义完整的查询状态结构和辅助函数。
 """
 
-from typing import TypedDict, List
 import copy
+from typing import List, TypedDict
 
 
 class QueryGraphState(TypedDict):

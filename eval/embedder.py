@@ -137,7 +137,7 @@ class CachedEmbedder:
         if missing:
             logger.info("需要新编码 %d 条文本", len(missing))
             vectors = self.inner.encode_queries(missing)  # type: ignore[attr-defined]
-            for text, vector in zip(missing, vectors):
+            for text, vector in zip(missing, vectors, strict=False):
                 self._cache[text_key(text)] = {
                     "dense": [float(x) for x in vector.dense],
                     "sparse": {str(k): float(v) for k, v in vector.sparse.items()},

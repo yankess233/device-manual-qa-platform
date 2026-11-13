@@ -26,7 +26,6 @@ import os
 import subprocess
 import sys
 import time
-from pathlib import Path
 from typing import Sequence
 
 import eval as eval_pkg  # noqa: F401  触发 .env 加载

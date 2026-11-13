@@ -20,5 +20,5 @@ client.fput_object(
 )
 
 # 上传后访问地址
-url = f"http://127.0.0.1:9000/knowledge/images/p1.jpg"
+url = "http://127.0.0.1:9000/knowledge/images/p1.jpg"
 print(url)

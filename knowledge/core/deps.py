@@ -1,4 +1,4 @@
-from functools import cache, lru_cache
+from functools import cache
 
 from knowledge.service.import_file_service import ImportFileService
 from knowledge.service.query_service import QueryService

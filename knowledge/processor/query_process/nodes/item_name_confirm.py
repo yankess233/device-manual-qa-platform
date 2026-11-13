@@ -1,9 +1,9 @@
 import json
 import re
 from json import JSONDecodeError
-from typing import List, Dict, Any, Tuple
+from typing import Any, Dict, List, Tuple
 
-from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from pymilvus import AnnSearchRequest
 
 from knowledge.processor.query_process.base import BaseNode
@@ -86,7 +86,7 @@ class ItemNameExtractor:
 
             return {"item_names": clean_item_names, "rewritten_query": clean_rewritten_query}
         except JSONDecodeError as e:
-            raise ValueError(f"JSON反序列LLM的输出失败：{str(e)}")
+            raise ValueError(f"JSON反序列LLM的输出失败：{str(e)}") from e
 
 
 class ItemNameAligner:
@@ -207,9 +207,9 @@ class ItemNameAligner:
 
         # 向量匹配的列表
         for search_result in search_results:
+            extracted_name = search_result["extracted_name"]
 
             # 每一个商品名称检索的类别
-            extracted_name = search_result["extracted_name"]
             matches = sorted(search_result["matches"], key=lambda x: x["score"], reverse=True)  # 分数降序
 
             # 获取高分区列表
@@ -246,7 +246,6 @@ class ItemNameAligner:
         """
         high_confirmed_item_score = {}  # 所有高置信的名称和分字典
         for search_result in search_results:
-            extracted_name = search_result["extracted_name"]
             matches = search_result["matches"]
             for match in matches:
                 item_name = match["item_name"]

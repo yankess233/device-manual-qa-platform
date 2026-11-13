@@ -7,6 +7,7 @@ from minio import Minio
 from pymilvus import MilvusClient
 from pymongo import MongoClient
 from pymongo.database import Database
+
 from knowledge.utils.client.base import BaseClientManager
 
 logger = logging.getLogger(__name__)
@@ -41,7 +42,7 @@ class StorageClients(BaseClientManager):
             else:
                 logger.info(f"存储桶已存在:{bucket_name}")
 
-            logger.info(f"MinIO 配置完成")
+            logger.info("MinIO 配置完成")
             return client
         except EnvironmentError:
             raise  # 配置缺失，直接上抛

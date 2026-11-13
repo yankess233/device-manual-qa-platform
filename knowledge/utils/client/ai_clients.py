@@ -1,14 +1,13 @@
-import logging
 import os
 import threading
+from typing import Optional
 
+from FlagEmbedding import FlagReranker
 from langchain_openai import ChatOpenAI
 from openai import OpenAI
 from pymilvus.model.hybrid import BGEM3EmbeddingFunction
-from FlagEmbedding import FlagReranker
+
 from knowledge.utils.client.base import BaseClientManager, logger
-import logging
-from typing import Optional
 
 
 class AIClients(BaseClientManager):
@@ -114,7 +113,7 @@ class AIClients(BaseClientManager):
                 device=device,
                 use_fp16=fp16,
             )
-            logger.info(f"bge_m3客户端初始化成功")
+            logger.info("bge_m3客户端初始化成功")
             return bge_m3_ef
         except EnvironmentError:
             raise
@@ -147,7 +146,7 @@ class AIClients(BaseClientManager):
                 device=device,  # GPU 加速
                 use_fp16=fp16  # 半精度推理
             )
-            logger.info(f"bge_m3_rerank客户端初始化成功")
+            logger.info("bge_m3_rerank客户端初始化成功")
             return reranker
         except EnvironmentError:
             raise

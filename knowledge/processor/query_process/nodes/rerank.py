@@ -1,7 +1,6 @@
-from typing import List, Dict, Any, Union
+from typing import Any, Dict, List, Union
 
 from knowledge.processor.query_process.base import BaseNode, setup_logging
-from knowledge.processor.query_process.exceptions import RerankError
 from knowledge.processor.query_process.state import QueryGraphState
 from knowledge.utils.client.ai_clients import AIClients
 
@@ -138,7 +137,7 @@ class RerankNode(BaseNode):
                 reranker_scores = [reranker_scores]
 
             # 将分数合并到doc对象中
-            doc_merge_score_list = [{**doc, "score": score} for doc, score in zip(multi_merge_docs, reranker_scores)]
+            doc_merge_score_list = [{**doc, "score": score} for doc, score in zip(multi_merge_docs, reranker_scores, strict=False)]
 
             # 对文档进行排序，按照score倒数排序
             doc_sorted_list = sorted(doc_merge_score_list, key=lambda x: x["score"], reverse=True)
@@ -187,7 +186,6 @@ class RerankNode(BaseNode):
 
         cut_off = upper_bound  # 断崖位置默认值
 
-        max_gap = 0.0  # 记录最大断崖位置差值
         for i in range(0, upper_bound - 1):
             current_score = reranked_docs[i]["score"]
             next_score = reranked_docs[i + 1]["score"]

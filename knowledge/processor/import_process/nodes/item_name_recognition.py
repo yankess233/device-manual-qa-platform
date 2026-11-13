@@ -1,13 +1,13 @@
 import json
 from typing import Any, Dict, List, Tuple
 
-from langchain_core.messages import SystemMessage, HumanMessage
+from langchain_core.messages import HumanMessage, SystemMessage
 from pymilvus import DataType
 
-from knowledge.processor.import_process.base import BaseNode, T, setup_logging
+from knowledge.processor.import_process.base import BaseNode, setup_logging
 from knowledge.processor.import_process.exceptions import StateFieldError, ValidationError
 from knowledge.processor.import_process.state import ImportGraphState
-from knowledge.prompt.import_prompt import ITEM_NAME_USER_PROMPT_TEMPLATE, ITEM_NAME_SYSTEM_PROMPT
+from knowledge.prompt.import_prompt import ITEM_NAME_SYSTEM_PROMPT, ITEM_NAME_USER_PROMPT_TEMPLATE
 from knowledge.utils.client.ai_clients import AIClients
 from knowledge.utils.client.storage_clients import StorageClients
 
@@ -59,18 +59,18 @@ class ItemNameRecognitionNode(BaseNode):
         item_name_chunk_size = self.config.item_name_chunk_size  # 25000
 
         if not file_title:
-            self.logger.error(f"file_title不存在")
+            self.logger.error("file_title不存在")
             raise StateFieldError(self.name, "file_title", expected_type=str)
         if not chunks and not isinstance(chunks, list):
-            self.logger.error(f"chunks不存在")
+            self.logger.error("chunks不存在")
             raise StateFieldError(self.name, "chunks", expected_type=list)
 
         if not item_name_chunk_k or item_name_chunk_k <= 0:
-            self.logger.error(f"item_name_chunk_k不存在或小于等于零")
-            raise ValidationError(f"item_name_chunk_k不存在或小于等于零", self.name)
+            self.logger.error("item_name_chunk_k不存在或小于等于零")
+            raise ValidationError("item_name_chunk_k不存在或小于等于零", self.name)
         if not item_name_chunk_size or item_name_chunk_size <= 0:
-            self.logger.error(f"item_name_chunk_size不存在或小于等于零")
-            raise ValidationError(f"item_name_chunk_size不存在或小于等于零", self.name)
+            self.logger.error("item_name_chunk_size不存在或小于等于零")
+            raise ValidationError("item_name_chunk_size不存在或小于等于零", self.name)
 
         return file_title, chunks, item_name_chunk_k, item_name_chunk_size
 
@@ -122,7 +122,7 @@ class ItemNameRecognitionNode(BaseNode):
 
         #处理LLM模型返回结果失败，降级处理
         if not llm_response or llm_response.content=="UNKNOWN":
-            self.logger.error(f"LLM模型调用失败,降级处理,用文件名称作为商品名称")
+            self.logger.error("LLM模型调用失败,降级处理,用文件名称作为商品名称")
             return file_title
 
         #获取响应内容
@@ -134,7 +134,7 @@ class ItemNameRecognitionNode(BaseNode):
         try:
             bge_m3_client = AIClients.get_bge_m3_client()
         except Exception as e:
-            self.logger.error(f"BGE-M3模型客户端初始化失败", e)
+            self.logger.error("BGE-M3模型客户端初始化失败", e)
             return None, None #降级处理
 
         try:
@@ -146,12 +146,12 @@ class ItemNameRecognitionNode(BaseNode):
             end_idx = sparse_matrix.indptr[1]
             token_ids = sparse_matrix.indices[start_idx:end_idx].tolist()  # indices = [11,22,33,44,55]
             weights = sparse_matrix.data[start_idx:end_idx].tolist() # indices = [111,222,333,444,555]
-            sparse_vector = dict(zip(token_ids, weights))  # Dict[int, float]
+            sparse_vector = dict(zip(token_ids, weights, strict=False))  # Dict[int, float]
 
             # 返回 稠密向量，稀疏向量
             return dense_vector,sparse_vector
         except Exception as e:
-            self.logger.error(f"BGE-M3向量化商品名称失败", e)
+            self.logger.error("BGE-M3向量化商品名称失败", e)
             return None,None
 
     def insert_milvus(self, file_title, item_name, dense_vector, sparse_vector):
@@ -162,7 +162,7 @@ class ItemNameRecognitionNode(BaseNode):
         try:
             milvus_client = StorageClients.get_milvus_client()
         except Exception as e:
-            self.logger.error(f"Milvus 客户端初始化失败", e)
+            self.logger.error("Milvus 客户端初始化失败", e)
             return
 
         try:
@@ -183,9 +183,9 @@ class ItemNameRecognitionNode(BaseNode):
             }
             self.logger.info(f"正在保存数据...={data}")
             milvus_client.insert(item_name_collection,[data])
-            self.logger.info(f"保存数据成功...")
+            self.logger.info("保存数据成功...")
         except Exception as e:
-            self.logger.error(f"保存商品名称数据失败", e)
+            self.logger.error("保存商品名称数据失败", e)
 
     def _create_item_name_collection(self, collection_name, milvus_client):
         schema = milvus_client.create_schema()

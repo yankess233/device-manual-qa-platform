@@ -3,11 +3,10 @@
 
 集中管理所有配置项，支持环境变量覆盖
 """
-import threading
-from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Set, Optional
 import os
+from dataclasses import dataclass, field
+from typing import Optional, Set
+
 from dotenv import load_dotenv
 
 load_dotenv()

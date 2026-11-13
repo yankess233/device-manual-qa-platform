@@ -19,7 +19,7 @@ start_idx = sparse_matrix.indptr[0]
 end_idx = sparse_matrix.indptr[1]
 token_ids = sparse_matrix.indices[start_idx:end_idx].tolist()
 weights = sparse_matrix.data[start_idx:end_idx].tolist()
-sparse_vector = dict(zip(token_ids, weights))    # Dict[int, float]
+sparse_vector = dict(zip(token_ids, weights, strict=False))    # Dict[int, float]
 
 print(start_idx)
 print(end_idx)

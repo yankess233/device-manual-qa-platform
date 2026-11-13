@@ -1,11 +1,11 @@
 import json
 import os
 import re
-from typing import List, Any, Dict
+from typing import Any, Dict, List
 
-from  langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 
-from knowledge.processor.import_process.base import BaseNode, T, setup_logging
+from knowledge.processor.import_process.base import BaseNode, setup_logging
 from knowledge.processor.import_process.exceptions import ValidationError
 from knowledge.processor.import_process.state import ImportGraphState
 from knowledge.utils.markdown_util import MarkdownTableLinearizer
@@ -47,19 +47,19 @@ class DocumentSplitNode(BaseNode):
         min_content_length = self.config.min_content_length  # 最小切片阈值  小于这个阈值要合并
 
         if not md_content:
-            raise ValidationError(f"切分的文档内容不存在!", self.name)
+            raise ValidationError("切分的文档内容不存在!", self.name)
 
         if not file_title:
-            raise ValidationError(f"切分的文档名称不存在!", self.name)
+            raise ValidationError("切分的文档名称不存在!", self.name)
 
         if max_content_length < 0:
-            raise ValidationError(f"参数错误：max_content_length不能小于零", self.name)
+            raise ValidationError("参数错误：max_content_length不能小于零", self.name)
 
         if min_content_length < 0:
-            raise ValidationError(f"参数错误：min_content_length不能小于零", self.name)
+            raise ValidationError("参数错误：min_content_length不能小于零", self.name)
 
         if max_content_length < min_content_length:
-            raise ValidationError(f"参数错误：max_content_length不能小于min_content_length值", self.name)
+            raise ValidationError("参数错误：max_content_length不能小于min_content_length值", self.name)
 
         return md_content, file_title, max_content_length, min_content_length
 
@@ -94,7 +94,7 @@ class DocumentSplitNode(BaseNode):
         heading_re = re.compile(r"^\s*(#{1,6})\s+(.+)$")
         body_lines = []
         title = ""
-        parent_title = ""
+        parent_title: str = ""  # noqa: F841 - 循环内赋值使用，静态检查看不到
         # 存放层级标题
         # ["","","","","","",""]
         # ["","# 标题","## 标题","### 标题","#### 标题","##### 标题","###### 标题"]
@@ -197,7 +197,7 @@ class DocumentSplitNode(BaseNode):
         # 2.判断表格
         # 利用工具类，将表格降维处理
         if "<table>" in body:
-            self.logger.info(f"对表格进行降维处理")
+            self.logger.info("对表格进行降维处理")
             body = MarkdownTableLinearizer.process(body)
             section['body'] = body
 

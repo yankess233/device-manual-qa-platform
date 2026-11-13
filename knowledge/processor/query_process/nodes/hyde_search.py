@@ -1,6 +1,6 @@
 from typing import Dict, Tuple
 
-from langchain_core.messages import SystemMessage, HumanMessage
+from langchain_core.messages import HumanMessage, SystemMessage
 
 from knowledge.processor.query_process.base import BaseNode
 from knowledge.processor.query_process.exceptions import StateFieldError
@@ -9,7 +9,11 @@ from knowledge.prompt.query_prompt import HYDE_USER_PROMPT_TEMPLATE
 from knowledge.utils.client.ai_clients import AIClients
 from knowledge.utils.client.storage_clients import StorageClients
 from knowledge.utils.embedding_util import generate_bge_m3_hybrid_vectors
-from knowledge.utils.milvus_util import item_names_filter, create_hybrid_search_requests, execute_hybrid_search_query
+from knowledge.utils.milvus_util import (
+    create_hybrid_search_requests,
+    execute_hybrid_search_query,
+    item_names_filter,
+)
 
 
 class HyDeSearchNode(BaseNode):

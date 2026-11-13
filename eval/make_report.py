@@ -127,7 +127,7 @@ def compare_table(runs: list[tuple[str, dict, list[dict]]], k: int) -> list[str]
         "| run | LLM | A2 Hit@5 | A3 Hit@5 | A4 Hit@5 | A4 MRR@5 | HyDE 冷启动平均 |",
         "| --- | --- | --- | --- | --- | --- | --- |",
     ]
-    for name, payload, rows in runs:
+    for _name, payload, rows in runs:
         meta = payload["meta"]
         configs = payload["configs"]
         cold = [row["hyde_ms"] for row in rows if row.get("hyde_cached") is False]
