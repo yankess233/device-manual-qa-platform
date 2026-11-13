@@ -56,3 +56,32 @@ def normalize_item_name(raw: str | None) -> str:
     text = text.strip("\"'“”‘’ \n\t")
     text = re.sub(r"\s+", " ", text)
     return text.strip()
+
+
+_TOKEN = re.compile(r"[A-Za-z]{1,}[A-Za-z0-9\-]{1,}|\d{2,}[A-Za-z0-9\-]*")
+
+
+def _tokens(text: str) -> set[str]:
+    """抽取"型号型" token：含字母且长度>=3，或纯数字长度>=2。
+
+    刻意不抽中文词——"万用表""数字"这类通用词命中率太高，会把别的型号也确认掉。
+    """
+    tokens = {token.upper() for token in _TOKEN.findall(text or "")}
+    return {token for token in tokens if len(token) >= 3 or token.isdigit()}
+
+
+def pick_by_token(extracted: str | None, candidates: list[str]) -> str | None:
+    """型号精确匹配短路。
+
+    当用户问题里的型号 token（如 `RS-12`）出现在候选商品名里时，直接确认，
+    不再依赖向量相似度阈值。解决"问 RS-12 怎么测电阻，系统却反问是哪款产品"。
+    多个候选同时命中时返回 None（有歧义，交回原有阈值逻辑）。
+    """
+    query_tokens = _tokens(extracted or "")
+    if not query_tokens:
+        return None
+
+    hits = [c for c in candidates if query_tokens & _tokens(c)]
+    if len(hits) == 1:
+        return hits[0]
+    return None

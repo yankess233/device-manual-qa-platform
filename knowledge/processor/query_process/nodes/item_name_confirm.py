@@ -11,6 +11,7 @@ from knowledge.processor.query_process.config import QueryConfig
 from knowledge.processor.query_process.state import QueryGraphState
 from knowledge.prompt.query_prompt import ITEM_NAME_EXTRACT_SYSTEM_PROMPT, ITEM_NAME_EXTRACT_TEMPLATE
 from knowledge.utils.client.ai_clients import AIClients
+from knowledge.utils.text_normalize import pick_by_token
 from knowledge.utils.client.storage_clients import StorageClients
 from knowledge.utils.embedding_util import generate_bge_m3_hybrid_vectors
 from knowledge.utils.milvus_util import create_hybrid_search_requests, execute_hybrid_search_query
@@ -211,6 +212,14 @@ class ItemNameAligner:
 
             # 每一个商品名称检索的类别
             matches = sorted(search_result["matches"], key=lambda x: x["score"], reverse=True)  # 分数降序
+
+            # 型号精确匹配短路：问题里出现 `RS-12` 这类型号 token，且候选商品名里也有，
+            # 直接确认，不再看相似度阈值——否则短 query 与长商品名相似度常年低于 0.6，
+            # 用户明明报了型号却被反问"你指的是哪款产品"（BC-11 的遗留症状）。
+            token_hit = pick_by_token(extracted_name, [m["item_name"] for m in matches])
+            if token_hit and token_hit not in confirmed:
+                confirmed.append(token_hit)
+                continue
 
             # 获取高分区列表
             high = [match["item_name"] for match in matches if match["score"] >= self.config.item_name_high_confidence]
