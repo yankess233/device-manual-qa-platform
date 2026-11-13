@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import os
 import queue
 from typing import Any, AsyncGenerator, Dict, Optional
 
@@ -45,6 +46,62 @@ def _sse_pack(event: str, data: Dict[str, Any]) -> str:
     return f"event: {event}\ndata: {payload}\n\n"
 
 
+
+# ---------------- Redis 模式（TASK_BACKEND=redis）----------------
+# 多 worker 部署时，推流（后台任务所在进程）和消费（SSE 请求所在进程）可能不是同一个进程，
+# 本地 queue 传不过去，只能走 Redis Pub/Sub。
+
+_redis_sync = None
+
+
+def _use_redis() -> bool:
+    return os.getenv("TASK_BACKEND", "memory").strip().lower() == "redis"
+
+
+def _redis_url() -> str:
+    return os.getenv("REDIS_URL", "redis://127.0.0.1:6379/0")
+
+
+def _channel(task_id: str) -> str:
+    return f"sb:stream:{task_id}"
+
+
+def _get_redis_sync():
+    global _redis_sync
+    if _redis_sync is None:
+        import redis
+        _redis_sync = redis.Redis.from_url(_redis_url(), decode_responses=True)
+    return _redis_sync
+
+
+async def _redis_event_stream(task_id: str, request: Request) -> AsyncGenerator:
+    """订阅 Redis 频道并把消息转成 SSE 包；空闲时发心跳保活。"""
+    from redis.asyncio import Redis as AsyncRedis
+
+    client = AsyncRedis.from_url(_redis_url(), decode_responses=True)
+    pubsub = client.pubsub()
+    channel = _channel(task_id)
+    try:
+        await pubsub.subscribe(channel)
+        while True:
+            if await request.is_disconnected():
+                return
+            message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=10.0)
+            if message is None:
+                yield ": heartbeat\n\n"  # 注释行，前端 EventSource 会忽略
+                continue
+            try:
+                payload = json.loads(message["data"])
+            except (TypeError, ValueError):
+                continue
+            yield _sse_pack(payload.get("event", SSEEvent.DELTA), payload.get("data", {}))
+    finally:
+        try:
+            await pubsub.unsubscribe(channel)
+            await pubsub.close()
+        finally:
+            await client.close()
+
 def push_sse_event(task_id: str, event: str, data: Dict[str, Any]):
     """
     通过 task_id 推送事件到 SSE 队列
@@ -52,10 +109,19 @@ def push_sse_event(task_id: str, event: str, data: Dict[str, Any]):
     # 1. 获取 SSE 队列
     stream_queue = get_sse_queue(task_id)
 
-    # 2. 队列存在
+    # 2. 同进程消费者：直接进本地队列
     if stream_queue:
-        # 3. 将事件推送到队列
         stream_queue.put({"event": event, "data": data})
+
+    # 3. 跨进程消费者：走 Redis Pub/Sub（TASK_BACKEND=redis 时）
+    if _use_redis():
+        try:
+            _get_redis_sync().publish(
+                _channel(task_id),
+                json.dumps({"event": event, "data": data}, ensure_ascii=False),
+            )
+        except Exception as error:  # 推流失败不能影响主流程
+            logging.warning("SSE Redis 发布失败：%s", error)
 
 
 async def sse_generator(task_id: str, request: Request) -> AsyncGenerator:
@@ -71,6 +137,12 @@ async def sse_generator(task_id: str, request: Request) -> AsyncGenerator:
         AsyncGenerator:异步生成器对象
 
     """
+
+    # 0. Redis 后端：订阅频道即可，不需要本地队列
+    if _use_redis():
+        async for chunk in _redis_event_stream(task_id, request):
+            yield chunk
+        return
 
     # 1. 根据任务id 获取任务队列对象
     sse_queue = _task_stream.get(task_id)

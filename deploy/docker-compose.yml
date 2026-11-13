@@ -38,6 +38,7 @@ x-app-base: &app-base
     MONGO_URL: mongodb://mongodb:27017
     BGE_M3_PATH: /models/bge-m3
     BGE_RERANKER_LARGE: /models/bge-reranker-large
+    REDIS_URL: redis://redis:6379/0
   volumes:
     - ${MODEL_DIR:-./models}:/models:ro          # 模型只读，避免误写
     - app-temp:/app/knowledge/temp_data          # 上传/解析中间产物，两服务共享
@@ -48,6 +49,8 @@ x-app-base: &app-base
     minio:
       condition: service_healthy
     mongodb:
+      condition: service_healthy
+    redis:
       condition: service_healthy
   restart: unless-stopped
   logging: *default-logging
@@ -124,6 +127,22 @@ services:
         condition: service_healthy
       minio:
         condition: service_healthy
+    logging: *default-logging
+
+  # ==================== Redis（任务态 + SSE 事件） ====================
+  redis:
+    container_name: kb-redis
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - ${DOCKER_VOLUME_DIRECTORY:-.}/volumes/redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    restart: always
     logging: *default-logging
 
   # ==================== MongoDB（会话历史） ====================
