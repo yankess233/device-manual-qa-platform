@@ -3,6 +3,7 @@ from typing import Any, Dict, List, Union
 from knowledge.processor.query_process.base import BaseNode, setup_logging
 from knowledge.processor.query_process.state import QueryGraphState
 from knowledge.utils.client.ai_clients import AIClients
+from knowledge.utils.ranking import cliff_cutoff
 
 
 class RerankNode(BaseNode):
@@ -173,28 +174,16 @@ class RerankNode(BaseNode):
             至少返回rerank_min_top_k个文档
         """
 
-        rerank_max_top_k = self.config.rerank_max_top_k  # 10
-        rerank_min_top_k = self.config.rerank_min_top_k  # 3
-        rerank_gap_abs = self.config.rerank_gap_abs  # 0.15  差值阈值
-        upper_bound = min(rerank_max_top_k, len(reranked_docs))
-        lower_bound = min(rerank_min_top_k, upper_bound)
-
-
-        # 无需断崖检测，直接返回
-        if upper_bound <= lower_bound:
-            return reranked_docs
-
-        cut_off = upper_bound  # 断崖位置默认值
-
-        for i in range(0, upper_bound - 1):
-            current_score = reranked_docs[i]["score"]
-            next_score = reranked_docs[i + 1]["score"]
-            gap = current_score - next_score  # 差值
-            if gap > rerank_gap_abs:
-                cut_off = i + 1
-                break
-        cut_off = max(cut_off, lower_bound)
-        return reranked_docs[:cut_off]
+        # 断崖截断逻辑抽到 knowledge/utils/ranking.py（纯函数，可单测）。
+        # 原实现内联在这里，模块一 import 就拉 torch，导致这块判断永远测不到。
+        scores = [doc.get("score", 0.0) for doc in reranked_docs]
+        keep = cliff_cutoff(
+            scores,
+            min_k=self.config.rerank_min_top_k,
+            max_k=self.config.rerank_max_top_k,
+            gap=self.config.rerank_gap_abs,
+        )
+        return reranked_docs[:keep]
 
 
 # ================================================================== #

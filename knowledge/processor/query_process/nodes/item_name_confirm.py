@@ -15,6 +15,7 @@ from knowledge.utils.client.storage_clients import StorageClients
 from knowledge.utils.embedding_util import generate_bge_m3_hybrid_vectors
 from knowledge.utils.milvus_util import create_hybrid_search_requests, execute_hybrid_search_query
 from knowledge.utils.mongo_history_util import get_recent_messages, update_message_item_names
+from knowledge.utils.ranking import decide_item_names
 from knowledge.utils.text_normalize import pick_by_token
 
 
@@ -209,43 +210,30 @@ class ItemNameAligner:
         # 向量匹配的列表
         for search_result in search_results:
             extracted_name = search_result["extracted_name"]
-
-            # 每一个商品名称检索的类别
-            matches = sorted(search_result["matches"], key=lambda x: x["score"], reverse=True)  # 分数降序
+            matches = sorted(search_result["matches"], key=lambda x: x["score"], reverse=True)
 
             # 型号精确匹配短路：问题里出现 `RS-12` 这类型号 token，且候选商品名里也有，
-            # 直接确认，不再看相似度阈值——否则短 query 与长商品名相似度常年低于 0.6，
-            # 用户明明报了型号却被反问"你指的是哪款产品"（BC-11 的遗留症状）。
+            # 直接确认，不再看相似度阈值——否则短 query 与长商品名相似度常年低于 0.6。
             token_hit = pick_by_token(extracted_name, [m["item_name"] for m in matches])
-            if token_hit and token_hit not in confirmed:
-                confirmed.append(token_hit)
+            if token_hit:
+                if token_hit not in confirmed:
+                    confirmed.append(token_hit)
                 continue
 
-            # 获取高分区列表
-            high = [match["item_name"] for match in matches if match["score"] >= self.config.item_name_high_confidence]
-
-            if high:
-                # 找到同名的则退出。没找到同名的返回None
-                #samename = next([item_name for item_name in high if item_name == extracted_name], None)
-                samename = next((item_name for item_name in high if item_name == extracted_name), None)
-                if samename:
-                    if samename not in confirmed:
-                        confirmed.append(samename)
-                elif len(high) == 1:
-                    if high[0] not in confirmed:
-                        confirmed.append(high[0])
-                else:
-                    for h in high[:3]:
-                        if h not in options and h not in confirmed:
-                            options.append(h)
-            else:
-                mid = [match["item_name"] for match in matches
-                       if self.config.item_name_mid_confidence <= match["score"] < self.config.item_name_high_confidence
-                       and match["item_name"] not in options
-                       and match["item_name"] not in confirmed]
-                if mid:
-                    for m in mid[:3]:
-                        options.append(m)
+            # 阈值决策抽成纯函数（knowledge/utils/ranking.py），便于单测覆盖边界
+            part_confirmed, part_options = decide_item_names(
+                matches,
+                extracted=extracted_name,
+                high=self.config.item_name_high_confidence,
+                mid=self.config.item_name_mid_confidence,
+                max_options=self.config.item_name_max_options,
+            )
+            for name in part_confirmed:
+                if name not in confirmed:
+                    confirmed.append(name)
+            for name in part_options:
+                if name not in options and name not in confirmed:
+                    options.append(name)
 
         return confirmed, options[:3]
 
