@@ -26,6 +26,8 @@ line-length = 110
 target-version = "py312"
 exclude = [
     "knowledge/.venv",
+    ".ci-venv",
+    ".ci-libs",
     "knowledge/test",      # 早期的验证脚本（不是 pytest 用例），单独治理
     "knowledge/temp_data",
     "eval/results",

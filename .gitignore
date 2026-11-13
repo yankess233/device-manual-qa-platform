@@ -143,3 +143,7 @@ tools/vm_ssh.py
 # 压测产物
 loadtest/results/
 logs/
+
+# 本地模拟 CI 的隔离环境
+.ci-venv/
+.ci-libs/

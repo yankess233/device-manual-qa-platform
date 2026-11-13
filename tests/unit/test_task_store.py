@@ -98,6 +98,7 @@ def test_store_is_singleton():
 @pytest.fixture
 def fake_redis(monkeypatch):
     fakeredis = pytest.importorskip("fakeredis", reason="未安装 fakeredis 时跳过")
+    pytest.importorskip("redis", reason="未安装 redis 客户端时跳过")
     import redis
 
     client = fakeredis.FakeStrictRedis(decode_responses=True)
