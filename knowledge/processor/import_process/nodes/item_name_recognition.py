@@ -10,6 +10,7 @@ from knowledge.processor.import_process.state import ImportGraphState
 from knowledge.prompt.import_prompt import ITEM_NAME_SYSTEM_PROMPT, ITEM_NAME_USER_PROMPT_TEMPLATE
 from knowledge.utils.client.ai_clients import AIClients
 from knowledge.utils.client.storage_clients import StorageClients
+from knowledge.utils.text_normalize import normalize_item_name
 
 
 class ItemNameRecognitionNode(BaseNode):
@@ -125,8 +126,12 @@ class ItemNameRecognitionNode(BaseNode):
             self.logger.error("LLM模型调用失败,降级处理,用文件名称作为商品名称")
             return file_title
 
-        #获取响应内容
-        item_name = llm_response.content.strip()
+        #获取响应内容：模型可能返回 JSON / 代码围栏 / 带引号字符串，统一剥成纯文本。
+        # 不剥的话，{"item_name": "..."} 会被原样写进 Milvus 标量字段（BC-01）。
+        item_name = normalize_item_name(llm_response.content)
+        if not item_name:
+            self.logger.error("LLM 返回空商品名，降级用文件名称")
+            return file_title
 
         return item_name
 

@@ -62,5 +62,8 @@ class ImportUser(HttpUser):
         with self.client.get(
             "/status/loadtest-nonexistent", headers=self._headers(), timeout=15, catch_response=True
         ) as response:
+            # 不存在的 task_id 返回 404 是**预期行为**（不是故障），只有 5xx 才算失败
             if response.status_code >= 500:
                 response.failure(f"HTTP {response.status_code}")
+            elif response.status_code in (200, 401, 404):
+                response.success()

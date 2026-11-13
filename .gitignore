@@ -139,3 +139,7 @@ eval/results/
 # 本机专用：VM 环境文件与运维脚本
 deploy/.env.vm
 tools/vm_ssh.py
+
+# 压测产物
+loadtest/results/
+logs/
