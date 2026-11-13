@@ -11,11 +11,11 @@ from knowledge.processor.query_process.config import QueryConfig
 from knowledge.processor.query_process.state import QueryGraphState
 from knowledge.prompt.query_prompt import ITEM_NAME_EXTRACT_SYSTEM_PROMPT, ITEM_NAME_EXTRACT_TEMPLATE
 from knowledge.utils.client.ai_clients import AIClients
-from knowledge.utils.text_normalize import pick_by_token
 from knowledge.utils.client.storage_clients import StorageClients
 from knowledge.utils.embedding_util import generate_bge_m3_hybrid_vectors
 from knowledge.utils.milvus_util import create_hybrid_search_requests, execute_hybrid_search_query
 from knowledge.utils.mongo_history_util import get_recent_messages, update_message_item_names
+from knowledge.utils.text_normalize import pick_by_token
 
 
 class ItemNameExtractor:
