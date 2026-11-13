@@ -3,19 +3,18 @@ import os
 from typing import Union
 
 import uvicorn
-from fastapi import FastAPI, UploadFile, File, Depends, BackgroundTasks, Request, HTTPException
+from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Request
 from starlette.middleware.cors import CORSMiddleware
 from starlette.responses import FileResponse, StreamingResponse
 from starlette.staticfiles import StaticFiles
 
+from knowledge.api.security import allowed_origins, require_api_key
 from knowledge.core.deps import get_query_service
 from knowledge.core.paths import get_front_page_dir
 from knowledge.processor.import_process.base import setup_logging
-from knowledge.schema.query_schema import QueryResponse, StreamSubmitResponse, QueryRequest
-from knowledge.schema.upload_schema import TaskStatusResponse
+from knowledge.schema.query_schema import QueryRequest, QueryResponse, StreamSubmitResponse
 from knowledge.service.query_service import QueryService
 from knowledge.utils.sse_util import create_sse_queue, sse_generator
-from knowledge.utils.task_util import get_task_info, get_task_result
 
 
 def register_router(app):
@@ -25,7 +24,8 @@ def register_router(app):
         return FileResponse(os.path.join(get_front_page_dir(), "chat.html"))
 
     # 处理客户端问题的请求
-    @app.post("/query", response_model=Union[QueryResponse, StreamSubmitResponse])
+    @app.post("/query", response_model=Union[QueryResponse, StreamSubmitResponse],
+              dependencies=[Depends(require_api_key)])
     async def query(request: QueryRequest, background_tasks: BackgroundTasks,
                     service: QueryService = Depends(get_query_service)):
         # 获取接收客户端传递过来的数据
@@ -65,7 +65,7 @@ def register_router(app):
                 task_id=task_id)
 
     # 流式输出
-    @app.get("/stream/{task_id}")
+    @app.get("/stream/{task_id}", dependencies=[Depends(require_api_key)])
     async def stream(task_id: str,request:Request) -> StreamingResponse:
         return StreamingResponse(
             sse_generator(task_id,request),
@@ -73,7 +73,7 @@ def register_router(app):
         )
 
 
-    @app.get("/history/{session_id}")
+    @app.get("/history/{session_id}", dependencies=[Depends(require_api_key)])
     async def get_history(
             session_id: str, limit: int = 50,
             service: QueryService = Depends(get_query_service),
@@ -82,9 +82,9 @@ def register_router(app):
             items = service.get_history(session_id, limit)
             return {"session_id": session_id, "items": items}
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"history error: {e}")
+            raise HTTPException(status_code=500, detail=f"history error: {e}") from e
 
-    @app.delete("/history/{session_id}")
+    @app.delete("/history/{session_id}", dependencies=[Depends(require_api_key)])
     async def clear_chat_history(
             session_id: str,
             service: QueryService = Depends(get_query_service),
@@ -103,7 +103,7 @@ def create_app():
     # 跨域设置
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],  # 对客户端访问来源限制
+        allow_origins=allowed_origins(),  # 白名单来自 ALLOWED_ORIGINS，默认只放行本机页面
         allow_credentials=False,  # 对请求cookie或Authorization头进行限制.  如果设置True，其他三个不能使用*
         allow_methods=["*"],  # 对请求方法限制    get  post  put  delete
         allow_headers=["*"],  # 对请求头限制

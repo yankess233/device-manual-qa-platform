@@ -1,0 +1,48 @@
+[tool.pytest.ini_options]
+testpaths = ["tests", "eval/tests"]
+addopts = "-q"
+markers = [
+    "integration: 需要 torch / 外部服务的用例，不放进 CI",
+]
+
+[tool.coverage.run]
+source = ["knowledge", "eval"]
+omit = [
+    "knowledge/test/*",
+    "knowledge/.venv/*",
+    "*/__pycache__/*",
+    "eval/results/*",
+]
+
+[tool.coverage.report]
+skip_empty = true
+exclude_lines = [
+    "if __name__ == .__main__.:",
+    "raise NotImplementedError",
+]
+
+[tool.ruff]
+line-length = 110
+target-version = "py312"
+exclude = [
+    "knowledge/.venv",
+    "knowledge/test",      # 早期的验证脚本（不是 pytest 用例），单独治理
+    "knowledge/temp_data",
+    "eval/results",
+    "eval/.cache",
+]
+
+[tool.ruff.lint]
+# 只开"能抓住真 bug"的规则，避免一次性改几百行格式导致 review 困难
+select = ["E", "F", "I", "B"]
+ignore = [
+    "E501",   # 行长交给 formatter
+    "E402",   # 现有代码里有"先 import 再 load_dotenv"的写法，后续单独治理
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["B011"]
+# FastAPI 的 Depends/File 就是"函数调用作默认值"，B008 在这里是误报
+"knowledge/api/*.py" = ["B008"]
+"knowledge/core/*.py" = ["B008"]
+"knowledge/test/*" = ["F401", "F841"]

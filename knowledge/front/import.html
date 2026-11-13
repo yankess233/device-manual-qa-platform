@@ -394,6 +394,19 @@
 </div>
 
 <script>
+    // ---------- API Key（可选）----------
+    // 服务端配置 API_KEYS 后，页面需带 key：?key=xxx 打开一次即可记住
+    const API_KEY = new URLSearchParams(location.search).get('key')
+      || localStorage.getItem('kb_api_key') || '';
+    if (API_KEY) localStorage.setItem('kb_api_key', API_KEY);
+    function authHeaders(extra) {
+      return Object.assign({}, extra || {}, API_KEY ? {'X-API-Key': API_KEY} : {});
+    }
+    function withKey(url) {
+      if (!API_KEY) return url;
+      return url + (url.includes('?') ? '&' : '?') + 'key=' + encodeURIComponent(API_KEY);
+    }
+
     const dropZone = document.getElementById('dropZone');
     const fileInput = document.getElementById('fileInput');
     const fileList = document.getElementById('fileList');
@@ -498,9 +511,11 @@
 
             const response = await fetch(`${API_BASE}/upload`, {
                 method: 'POST',
+                headers: authHeaders(),
                 body: formData
             });
 
+            if (response.status === 401) throw new Error('需要 API Key：请在地址后加 ?key=你的Key');
             if (!response.ok) throw new Error('Upload failed');
 
             const result = await response.json();
@@ -614,7 +629,7 @@
             if (stopped) return;
 
             try {
-                const res = await fetch(`${API_BASE}/status/${taskId}`);
+                const res = await fetch(withKey(`${API_BASE}/status/${taskId}`), { headers: authHeaders() });
                 if (!res.ok) throw new Error('Status request failed');
 
                 const data = await res.json();

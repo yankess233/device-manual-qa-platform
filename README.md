@@ -530,6 +530,15 @@ data: {"answer": "……完整答案……"}
 | `ITEM_NAME_GAP_ABS` | 0.15 | 多候选时与最高分的差值下限，低于此值的候选视为噪声 |
 | `ITEM_NAME_MAX_OPTIONS` | 5 | 反问时最多列出的候选商品数 |
 
+接口安全（`knowledge/api/security.py` + `knowledge/utils/upload_guard.py`）：
+
+| 环境变量 | 默认值 | 说明 |
+| --- | --- | --- |
+| `API_KEYS` | 空 | 逗号分隔的 Key 列表；空 = 不鉴权（仅本地）。可传 `X-API-Key` 头或 `?key=` |
+| `ALLOWED_ORIGINS` | 本机 8000/8001 | CORS 白名单，替代原来的 `*` |
+| `MAX_UPLOAD_MB` | 50 | 上传大小上限，流式校验，超限删除半成品 |
+| `ALLOWED_UPLOAD_SUFFIXES` | `.pdf,.md,.markdown` | 后缀白名单 |
+
 大模型侧（`knowledge/utils/client/ai_clients.py`）：
 
 | 环境变量 | 默认值 | 说明 |
@@ -643,7 +652,9 @@ chunk_id；**解析不到直接报错退出**，等于用机器反查"这道题�
   「直接用 LLM 抽取结果过滤」，此时可能召回为空。暂不支持人工纠错反馈回流。
 - **任务状态为进程内存**：`task_util` 使用内存字典维护进度与结果，服务重启后任务状态丢失；后续将迁移至 Redis。
 - **查询侧进度轮询**：`/status/{task_id}` 目前仅由导入服务提供，`chat.html` 已预留轮询入口。
-- **无鉴权 / 多租户**：当前面向内网或本地部署；上传缺少类型/大小/文件名校验，生产需前置网关。
+- **已实现基础鉴权与上传校验**：`API_KEYS`（头或查询参数）、上传后缀白名单、50MB 流式上限、
+  文件名净化（`Path(name).name` + 白名单字符），并有 26 个安全/切分类单元测试覆盖；
+  **仍为单租户**：多租户需要把 `item_name` 过滤扩展为 `tenant_id` 标量过滤 + JWT 角色。
 - **规划**：技术指标拆分重切、HyDE 默认下线、BM25 独立召回、切片去重与增量更新、
   答案引用溯源（页码级）、多模态检索（以图搜手册）、Docker Compose 一键编排。
 

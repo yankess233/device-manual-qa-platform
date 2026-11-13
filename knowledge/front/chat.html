@@ -306,6 +306,19 @@
   </div>
 
   <script>
+    // ---------- API Key（可选）----------
+    // 服务端配置 API_KEYS 后，页面需带 key：?key=xxx 打开一次即可记住
+    const API_KEY = new URLSearchParams(location.search).get('key')
+      || localStorage.getItem('kb_api_key') || '';
+    if (API_KEY) localStorage.setItem('kb_api_key', API_KEY);
+    function authHeaders(extra) {
+      return Object.assign({}, extra || {}, API_KEY ? {'X-API-Key': API_KEY} : {});
+    }
+    function withKey(url) {
+      if (!API_KEY) return url;
+      return url + (url.includes('?') ? '&' : '?') + 'key=' + encodeURIComponent(API_KEY);
+    }
+
     // 默认同源；如你把页面单独打开（file://），可改成 http://127.0.0.1:8001
     const API_BASE = `${location.protocol}//${location.host}`.includes('http') ? `${location.protocol}//${location.host}` : 'http://127.0.0.1:8001';
     const chatEl = document.getElementById('chat');
@@ -662,7 +675,7 @@
 
     async function loadHistory(){
       try{
-        const res = await fetch(`${API_BASE}/history/${sessionId}`);
+        const res = await fetch(withKey(`${API_BASE}/history/${sessionId}`), { headers: authHeaders() });
         if(!res.ok) return;
         const data = await res.json();
         const items = Array.isArray(data.items) ? data.items : [];
@@ -685,7 +698,7 @@
       const isStream = streamToggle.checked;
       const res = await fetch(`${API_BASE}/query`, {
         method: 'POST',
-        headers: {'Content-Type':'application/json'},
+        headers: authHeaders({'Content-Type':'application/json'}),
         body: JSON.stringify({
           query: text,
           session_id: sessionId,
@@ -703,7 +716,7 @@
       const typing = botMsgEl.querySelector('.typing');
       const interval = setInterval(async () => {
         try{
-          const res = await fetch(`${API_BASE}/status/${taskId}`);
+          const res = await fetch(withKey(`${API_BASE}/status/${taskId}`), { headers: authHeaders() });
           const data = await res.json();
           renderProgress(botMsgEl, data.done_list, data.running_list, data.status);
 
@@ -762,7 +775,8 @@
           bubble.insertBefore(answerEl, bubble.firstChild);
         }
 
-        const es = new EventSource(`${API_BASE}/stream/${task_id}`);
+        // EventSource 不能自定义请求头，key 只能走查询参数
+        const es = new EventSource(withKey(`${API_BASE}/stream/${task_id}`));
         console.log('[perf] C EventSource created', performance.now(), { task_id });
         let rawAnswerText = '';
 
@@ -874,7 +888,7 @@
       if(!confirm('确定要清空当前会话的历史记录吗？这将无法恢复。')) return;
 
       try {
-        const res = await fetch(`${API_BASE}/history/${sessionId}`, { method: 'DELETE' });
+        const res = await fetch(withKey(`${API_BASE}/history/${sessionId}`), { method: 'DELETE', headers: authHeaders() });
         if(!res.ok) {
            console.error("Failed to clear history backend, status:", res.status);
            alert('服务端清空失败，仅清空本地显示');
