@@ -429,6 +429,19 @@ locust -f loadtest/locustfile.py --headless -u 5  -r 1 -t 2m --csv=lt-5  --host 
 locust -f loadtest/locustfile.py --headless -u 20 -r 5 -t 2m --csv=lt-20 --host http://127.0.0.1:8001
 ```
 
+实测（RTX 3060、qwen3.8-flash 关思考、单进程 uvicorn、22 切片知识库）：
+
+| 并发 | 请求数/时长 | P50 | P95 | 错误率 |
+| --- | --- | --- | --- | --- |
+| 5 | 10 / 60s | 11.0s | 12.0s | 0% |
+| 8 | 12 / 45s | 11.0s | 11.0s | 0% |
+| 10 | 20 / 60s | 12.0s | 12.0s | 0% |
+
+结论：5→10 并发 P95 基本不变、吞吐翻倍，说明请求是并行的；**瓶颈在单卡串行推理**
+（BGE-M3 与精排共用一把进程内锁），单题 11s ≈ 检索 2s + 生成 3~5s + 精排与编码。
+提吞吐要走模型服务化 / 批推理 / 语义缓存，而不是加 worker。详见
+[`loadtest/README.md`](loadtest/README.md)。
+
 两个前提：压测前先手动问一次做**模型预热**（否则首批请求会污染 P95）；
 CPU 部署下把 `-u` 从 5 起步，虚拟机内存不足时先降并发。
 
