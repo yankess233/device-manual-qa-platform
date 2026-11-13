@@ -16,12 +16,14 @@ import sys
 import urllib.error
 import urllib.request
 
+# role: infra = 基础设施宿主机；app = 应用服务所在机器
+# 两者可以分开（当前环境就是：容器在 VM 192.168.10.150，应用跑在 Windows 宿主机）
 CHECKS = [
-    ("Milvus gRPC", "tcp", 19530),
-    ("MinIO S3", "tcp", 9000),
-    ("MongoDB", "tcp", 27017),
-    ("导入服务 /docs", "http", 8000),
-    ("问答服务 /docs", "http", 8001),
+    ("Milvus gRPC", "tcp", 19530, "infra"),
+    ("MinIO S3", "tcp", 9000, "infra"),
+    ("MongoDB", "tcp", 27017, "infra"),
+    ("导入服务 /docs", "http", 8000, "app"),
+    ("问答服务 /docs", "http", 8001, "app"),
 ]
 
 
@@ -46,15 +48,19 @@ def check_http(host: str, port: int, timeout: float = 5.0) -> tuple[bool, str]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="部署连通性自检")
-    parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--host", default="127.0.0.1", help="基础设施（Milvus/MinIO/Mongo）地址")
+    parser.add_argument("--app-host", default=None, help="应用服务地址，默认与 --host 相同")
     args = parser.parse_args()
+
+    app_host = args.app_host or args.host
 
     failures = 0
     print(f"{'检查项':<18}{'目标':<26}{'结果'}")
     print("-" * 72)
-    for name, kind, port in CHECKS:
-        target = f"{args.host}:{port}"
-        ok, detail = check_tcp(args.host, port) if kind == "tcp" else check_http(args.host, port)
+    for name, kind, port, role in CHECKS:
+        host = args.host if role == "infra" else app_host
+        target = f"{host}:{port}"
+        ok, detail = check_tcp(host, port) if kind == "tcp" else check_http(host, port)
         if not ok:
             failures += 1
         print(f"{name:<18}{target:<26}{'OK' if ok else 'FAIL':<6}{detail}")
