@@ -137,8 +137,8 @@ def main() -> int:
         s10 = evaluate(1.0, 10, 10)
         state['records'] = saved
         print(
-            f"{depth:<16}{s5[f'hit@5']:>8.3f}{s10[f'hit@10']:>8.3f}"
-            f"{s5[f'recall@5']:>10.3f}{s5[f'mrr@5']:>9.3f}"
+            f"{depth:<16}{s5['hit@5']:>8.3f}{s10['hit@10']:>8.3f}"
+            f"{s5['recall@5']:>10.3f}{s5['mrr@5']:>9.3f}"
             f"{s5['avg_docs']:>8.1f}{s5['avg_context_chars']:>10.0f}"
         )
     return 0
