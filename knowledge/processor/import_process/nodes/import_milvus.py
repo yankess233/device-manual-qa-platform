@@ -247,7 +247,7 @@ from pathlib import Path
 if __name__ == "__main__":
     setup_logging()
 
-    temp_dir = Path(r"E:\project\agent_project\shoper_brain\knowledge\processor\import_process\temp_dir\万用表RS-12的使用")
+    temp_dir = Path(r"E:\project\agent_project\shoper_brain\knowledge\processor\import_process\temp_dir\美的空调")
 
     input_path = temp_dir / "chunks.json"
     output_path = temp_dir / "chunks_vector_ids.json"

@@ -27,10 +27,10 @@ print(f"   MODELSCOPE_OFFLINE = {os.environ.get('MODELSCOPE_OFFLINE')}")
 print(f"   HF_HOME = {os.environ.get('HF_HOME')}")
 print()
 
-# mineru -p E:\doc\万用表RS-12的使用.pdf -o E:\temp_dir --source=local --backend pipeline
-# mineru -p E:\doc\万用表RS-12的使用.pdf -o E:\temp_dir --source=local -b pipeline
+# mineru -p E:\doc\美的空调.pdf -o E:\temp_dir --source=local --backend pipeline
+# mineru -p E:\doc\美的空调.pdf -o E:\temp_dir --source=local -b pipeline
 proc = subprocess.Popen(
-    args=["mineru-kit", "parse", r"F:\BaiduNetdiskDownload\temp_dir\万用表RS-12的使用.pdf", "-o", r"E:\project\agent_project\shoper_brain\knowledge\processor\import_process\temp_dir\万用表RS-12的使用.md", "--tier", "basic"],
+    args=["mineru-kit", "parse", r"F:\BaiduNetdiskDownload\temp_dir\美的空调.pdf", "-o", r"E:\project\agent_project\shoper_brain\knowledge\processor\import_process\temp_dir\美的空调.md", "--tier", "basic"],
     stdout=subprocess.PIPE,    # 捕获标准输出
     stderr=subprocess.STDOUT,  # 合并错误到标准输出
     text=True,

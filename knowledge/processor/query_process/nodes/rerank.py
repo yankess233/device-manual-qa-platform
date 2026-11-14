@@ -16,17 +16,17 @@ class RerankNode(BaseNode):
             rrf_chunks
                 "rrf_chunks": [
                     {"chunk_id": "local_1",
-                    "title": "主板维修手册",
-                     "content": "主板短路通常表现为通电后风扇转一下就停，可以使用万用表的蜂鸣档测量。"},
+                    "title": "## 故障核查",
+                     "content": "显示屏出现 E1 代码时：关机并关闭电源，10 分钟后重新上电开机，仍显示则联系检修。"},
                     {"chunk_id": "local_2",
                     "title": "闲聊",
-                     "content": "今天中午去吃猪脚饭吧，这块主板外观很漂亮。"},
+                     "content": "今天中午去吃猪脚饭吧，这台空调的外观很漂亮。"},
                 ]
             web_search_docs
                 "web_search_docs": [
                     {"url": "https://example.com/repair",
-                    "title": "短路查修指南",
-                     "snippet": "主板通电前先打各主供电电感的对地阻值，阻值偏低就是短路。"},
+                    "title": "空调 E1 故障代码处理指南",
+                     "snippet": "E1 多与室内外机通信异常有关，先断电重启，仍报错再联系售后检修。"},
                     {"url": "https://example.com/news",
                     "title": "科技新闻",
                      "snippet": "苹果发布新款手机，A系列芯片性能提升20%。"},
@@ -35,12 +35,12 @@ class RerankNode(BaseNode):
             reranked_results : [
                     {"source":"web",
                     "url": "https://example.com/repair",
-                    "title": "主板维修手册",
-                     "content": "主板短路通常表现为通电后风扇转一下就停，可以使用万用表的蜂鸣档测量。"},
+                    "title": "## 故障核查",
+                     "content": "显示屏出现 E1 代码时：关机并关闭电源，10 分钟后重新上电开机，仍显示则联系检修。"},
                     {"source":"local",
                     "chunk_id": "local_2",
                     "title": "闲聊",
-                     "content": "今天中午去吃猪脚饭吧，这块主板外观很漂亮。"},
+                     "content": "今天中午去吃猪脚饭吧，这台空调的外观很漂亮。"},
                 ]
         """
 
@@ -115,8 +115,8 @@ class RerankNode(BaseNode):
         """
         # 3. 构建reranker模型的输入
              pairs = [
-                 ["什么是万用表？", "万用表是一种测量电压、电流、电阻的仪器"],
-                 ["什么是万用表？", "今天天气很好"]
+                 ["什么是空调？", "空调是一种调节室内温度的家用电器"],
+                 ["什么是空调？", "今天天气很好"]
              ]
         # 4.Reranker 计算得分
             scores = reranker.compute_score(pairs,normalize=True )
@@ -161,9 +161,9 @@ class RerankNode(BaseNode):
             需要被断崖检测的列表。
 
             【重排序结果】:
-            [1] score=0.9937 | local | 主板短路通常表现为通电后风扇转一下就停，可以使用万用表的蜂鸣档测量。...
-            [2] score=0.9813 | web   | 主板通电前先打各主供电电感的对地阻值，阻值偏低就是短路。...
-            [3] score=0.0086 | local | 今天中午去吃猪脚饭吧，这块主板外观很漂亮。...
+            [1] score=0.9937 | local | 显示屏出现 E1 代码时：关机并关闭电源，10 分钟后重新上电开机。...
+            [2] score=0.9813 | web   | E1 多与室内外机通信异常有关，先断电重启，仍报错再联系售后。...
+            [3] score=0.0086 | local | 今天中午去吃猪脚饭吧，这台空调外观很漂亮。...
             [4] score=0.0001 | web   | 苹果发布新款手机，A系列芯片性能提升20%。...
 
             rerank_max_top_k = self.config.rerank_max_top_k   # 10
@@ -201,25 +201,25 @@ if __name__ == "__main__":
     print("=" * 60)
 
     mock_state = {
-        "rewritten_query": "怎么测这块主板的短路问题？",
+        "rewritten_query": "这台空调显示 E1 代码怎么处理？",
         "rrf_chunks": [
-            {"chunk_id": "local_1", "title": "主板维修手册",
-             "content": "主板短路通常表现为通电后风扇转一下就停，可以使用万用表的蜂鸣档测量。"},
+            {"chunk_id": "local_1", "title": "## 故障核查",
+             "content": "显示屏出现 E1 代码时：关机并关闭电源，10 分钟后重新上电开机，仍显示则联系检修。"},
             {"chunk_id": "local_2", "title": "闲聊",
-             "content": "今天中午去吃猪脚饭吧，这块主板外观很漂亮。"},
+             "content": "今天中午去吃猪脚饭吧，这台空调的外观很漂亮。"},
         ],
         "web_search_docs": [
-            {"url": "https://example.com/repair", "title": "短路查修指南",
-             "snippet": "主板通电前先打各主供电电感的对地阻值，阻值偏低就是短路。"},
+            {"url": "https://example.com/repair", "title": "空调 E1 故障代码处理指南",
+             "snippet": "E1 多与室内外机通信异常有关，先断电重启，仍报错再联系售后检修。"},
             {"url": "https://example.com/news", "title": "科技新闻",
              "snippet": "苹果发布新款手机，A系列芯片性能提升20%。"},
         ],
     }
     # mock_state = {
-    #     "rewritten_query": "怎么测这块主板的短路问题？",
+    #     "rewritten_query": "这台空调显示 E1 代码怎么处理？",
     #     "rrf_chunks": [
-    #         {"chunk_id": "local_1", "title": "主板维修手册",
-    #          "content": "主板短路通常表现为通电后风扇转一下就停，可以使用万用表的蜂鸣档测量。"}
+    #         {"chunk_id": "local_1", "title": "## 故障核查",
+    #          "content": "显示屏出现 E1 代码时：关机并关闭电源，10 分钟后重新上电开机，仍显示则联系检修。"}
     #     ]
     # }
 

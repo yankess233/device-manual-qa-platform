@@ -118,9 +118,9 @@ class BgeEmbeddingChunksNode(BaseNode):
 if __name__ == '__main__':
     setup_logging()
 
-    base_temp_dir = Path(r"E:\project\agent_project\shoper_brain\knowledge\processor\import_process\temp_dir\万用表RS-12的使用")
+    base_temp_dir = Path(r"E:\project\agent_project\shoper_brain\knowledge\processor\import_process\temp_dir\美的空调")
 
-    input_path = base_temp_dir / "chunks.json"  #上个节点识别商品名称回填chunks临时存储
+    input_path = base_temp_dir / "chunks.json"  #上个节点识别产品名称回填chunks临时存储
     output_path = base_temp_dir / "chunks_item_name_vector.json" #转换完向量后进行临时存储
 
     # 1. 读取上游状态

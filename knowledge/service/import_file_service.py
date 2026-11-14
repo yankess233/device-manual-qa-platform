@@ -100,7 +100,7 @@ class ImportFileService:
 
     def _save_upload_file_to_local(self, file: UploadFile, file_dir, filename: str):
         """写本地:保存到本地（边写边校验大小，超限删除半成品）"""
-        # D:\workspace\workspaceAI260528\shopkeeper_brain\knowledge\temp_data\20260720\ABCABCAB\万用表RS-12的使用.pdf
+        # D:\workspace\workspaceAI260528\shopkeeper_brain\knowledge\temp_data\20260720\ABCABCAB\美的空调.pdf
         os.makedirs(file_dir, exist_ok=True)
         import_file_path = os.path.join(file_dir, filename)  # 文件名已净化，不含目录部分
         try:

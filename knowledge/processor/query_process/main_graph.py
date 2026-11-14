@@ -27,7 +27,7 @@ load_dotenv()
 
 
 def route_after_item_confirm(state: QueryGraphState) -> bool:
-    """商品名称确认后的路由逻辑。
+    """产品名称确认后的路由逻辑。
 
     根据是否已有答案决定是否跳过搜索直接输出。
 
@@ -107,7 +107,7 @@ def create_query_graph() -> CompiledStateGraph:
     # 4. 设置入口点
     workflow.set_entry_point("item_name_confirm")
 
-    # 5. 添加条件边：商品名称确认后根据是否有答案路由
+    # 5. 添加条件边：产品名称确认后根据是否有答案路由
     workflow.add_conditional_edges(
         "item_name_confirm",
         route_after_item_confirm,
@@ -153,12 +153,12 @@ if __name__ == "__main__":
     print("开始测试: 查询流程主图 (main_graph)")
     print("=" * 60)
 
-    # 测试场景：商品名明确，走完整 pipeline
-    print("\n【场景】: 商品名明确，走完整 pipeline")
+    # 测试场景：产品名明确，走完整 pipeline
+    print("\n【场景】: 产品名明确，走完整 pipeline")
     print("-" * 60)
 
     mock_state_1 = {
-        "original_query": "RS-12 数字万用表如何测量直流电压？",
+        "original_query": "美的空调如何测量直流电压？",
         "session_id": "test_session_main_graph",
         "task_id": "test_task_001",
         "is_stream": False,
@@ -172,7 +172,7 @@ if __name__ == "__main__":
     #与LLM中的llm.invoke()和 llm.stream()的作用不同。llm.stream()表示流式输出。
 
     print("\n  【结果】:")
-    print(f"  商品名: {result_1.get('item_names')}")
+    print(f"  产品名: {result_1.get('item_names')}")
     print(f"  重写查询: {result_1.get('rewritten_query')}")
     answer_1 = result_1.get("answer", "")
     print(f"  答案: {answer_1[:200]}..." if len(answer_1) > 200 else f"  答案: {answer_1}")

@@ -73,13 +73,13 @@ class DocumentSplitNode(BaseNode):
                 sections = [{
                         "title": "## 安全手册",
                         "parent_title": "# 手册",
-                        "file_title": "万用表手册",
+                        "file_title": "空调手册",
                         "body": "为了您的安全，请在使用本仪表之前仔细阅读该手册。。。。。。。"
                     },
                     {
                         "title": "## 安全手册",
                         "parent_title": "# 手册",
-                        "file_title": "万用表手册",
+                        "file_title": "空调手册",
                         "body": "为了您的安全，请在使用本仪表之前仔细阅读该手册。。。。。。。"
                     }
                 ]
@@ -289,13 +289,13 @@ class DocumentSplitNode(BaseNode):
                 sections = [{
                             "title": "## 安全手册",
                             "parent_title": "# 手册",
-                            "file_title": "万用表手册",
+                            "file_title": "空调手册",
                             "body": "为了您的安全，请在使用本仪表之前仔细阅读该手册。。。。。。。"
                         },
                         {
                             "title": "## 安全手册",
                             "parent_title": "# 手册",
-                            "file_title": "万用表手册",
+                            "file_title": "空调手册",
                             "body": "为了您的安全，请在使用本仪表之前仔细阅读该手册。。。。。。。"
                         }
                     ]
@@ -303,13 +303,13 @@ class DocumentSplitNode(BaseNode):
                  chunks = [{
                             "title": "## 安全手册",
                             "parent_title": "# 手册",
-                            "file_title": "万用表手册",
+                            "file_title": "空调手册",
                             "content": "title" + "body"
                         },
                         {
                             "title": "## 安全手册",
                             "parent_title": "# 手册",
-                            "file_title": "万用表手册",
+                            "file_title": "空调手册",
                             "content": "title" + "body"
                         }
                     ]
@@ -370,13 +370,13 @@ if __name__ == '__main__':
     setup_logging()
 
     node = DocumentSplitNode()
-    file_path = r"E:\project\agent_project\shoper_brain\knowledge\processor\import_process\temp_dir\万用表RS-12的使用\万用表RS-12的使用_new.md"  # 被切分文档
+    file_path = r"E:\project\agent_project\shoper_brain\knowledge\processor\import_process\temp_dir\美的空调\美的空调_new.md"  # 被切分文档
     with open(file_path, "r", encoding="utf-8") as f:
         content = f.read()
     state = {
-        "file_title": "万用表RS-12的使用_new",
+        "file_title": "美的空调_new",
         "md_content": content,
-        "file_dir": r"E:\project\agent_project\shoper_brain\knowledge\processor\import_process\temp_dir\万用表RS-12的使用"
+        "file_dir": r"E:\project\agent_project\shoper_brain\knowledge\processor\import_process\temp_dir\美的空调"
         }
 
     node.process(state)

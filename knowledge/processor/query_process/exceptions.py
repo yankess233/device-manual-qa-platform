@@ -154,8 +154,8 @@ class RerankError(QueryProcessError):
 
 
 class ItemNameConfirmError(QueryProcessError):
-    """商品名称确认错误。
+    """产品名称确认错误。
 
-    商品名称识别或确认过程失败时抛出。
+    产品名称识别或确认过程失败时抛出。
     """
     pass

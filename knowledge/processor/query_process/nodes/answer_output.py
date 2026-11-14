@@ -44,7 +44,7 @@ class AnswerOutputNode(BaseNode):
         answer = state.get("answer")
         # 1.已有答案处理
         if answer:
-            # 商品名称确认节点，生成了答案： 中置信选择或抱歉
+            # 产品名称确认节点，生成了答案： 中置信选择或抱歉
             # state["answer"] = f"我不确定您指的是哪款产品。您是在询问以下产品吗：{'、'.join(options)}？"
             # state["answer"] = "抱歉，我无法识别您询问的具体产品名称，请提供更准确的产品名称或型号。"
             self._push_existing_answer(state)
@@ -116,8 +116,8 @@ class AnswerOutputNode(BaseNode):
     def _format_reranked_docs(self, reranked_docs: List[Dict[str, Any]], char_budget: int) -> Tuple[str, int]:
         """
         拼串：
-            [1][source="local"][chunk_id=str(467775438085177876)][title="万用表RS-12的使用"][score=0.99999] \n xxxxxxxxxxxxxxx内容xxxxxxxxxxxxxxxxxxx \n\n
-            [2][source="web"][url="http://xxxx"][title="万用表RS-12的使用"][score=0.99999] \n xxxxxxxxxxxxxxx内容xxxxxxxxxxxxxxxxxxx \n\n
+            [1][source="local"][chunk_id=str(467775438085177876)][title="美的空调"][score=0.99999] \n xxxxxxxxxxxxxxx内容xxxxxxxxxxxxxxxxxxx \n\n
+            [2][source="web"][url="http://xxxx"][title="美的空调"][score=0.99999] \n xxxxxxxxxxxxxxx内容xxxxxxxxxxxxxxxxxxx \n\n
         :param param:
         :param budget_chars:
         :return:
@@ -204,7 +204,7 @@ class AnswerOutputNode(BaseNode):
         """
         问：什么时候记录历史会话？什么时候使用到了历史会话？
             使用历史记录：
-                商品名确认节点。拉取最近10条
+                产品名确认节点。拉取最近10条
                 生成提示词模板，参数需要历史会话
             生成答案时需要记录历史
 
@@ -248,19 +248,19 @@ class AnswerOutputNode(BaseNode):
 #         "task_id": "test_task_001",
 #         "session_id": "test_session_001",
 #         "is_stream": False,
-#         "original_query": "万用表怎么测电压？",
-#         "rewritten_query": "RS-12数字万用表如何测量电压？",
-#         "item_names": ["RS-12数字万用表"],
+#         "original_query": "空调怎么清洁滤网？",
+#         "rewritten_query": "美的空调如何测量电压？",
+#         "item_names": ["美的空调"],
 #         "reranked_docs": [
 #             {
-#                 "content": "数字万用表测量电压步骤：1. 将旋钮转到V档位；2. 黑表笔插COM孔，红表笔插V孔；3. 将表笔并联到被测点两端。",
+#                 "content": "## 故障核查\n\n显示屏出现 E1 代码时：关机并关闭电源，10 分钟后重新上电开机；仍显示代码则联系检修。",
 #                 "source": "local",
 #                 "chunk_id": "chunk_001",
-#                 "title": "万用表使用手册",
+#                 "title": "空调使用说明书",
 #                 "score": 0.9234
 #             },
 #             {
-#                 "content": "测量直流电压时需注意正负极性，红表笔接正极，黑表笔接负极。",
+#                 "content": "## 故障核查\n\n显示屏出现 E1 代码时：关机并关闭电源，10 分钟后重新上电开机；仍显示代码则联系检修。",
 #                 "source": "web",
 #                 "url": "https://example.com/guide",
 #                 "title": "电压测量指南",
@@ -268,8 +268,8 @@ class AnswerOutputNode(BaseNode):
 #             }
 #         ],
 #         "history": [
-#             {"role": "user", "text": "万用表是什么？"},
-#             {"role": "assistant", "text": "万用表是一种多功能电子测量仪器..."}
+#             {"role": "user", "text": "空调怎么清洁滤网？"},
+#             {"role": "assistant", "text": "空调滤尘网建议每月清洁一次..."}
 #         ],
 #     }
 #
@@ -316,19 +316,19 @@ if __name__ == "__main__":
         "task_id": task_id,
         "session_id": "test_session_001",
         "is_stream": True,
-        "original_query": "万用表怎么测电压？",
-        "rewritten_query": "RS-12数字万用表如何测量电压？",
-        "item_names": ["RS-12数字万用表"],
+        "original_query": "空调怎么清洁滤网？",
+        "rewritten_query": "美的空调如何测量电压？",
+        "item_names": ["美的空调"],
         "reranked_docs": [
             {
-                "content": "数字万用表测量电压步骤：1. 将旋钮转到V档位；2. 黑表笔插COM孔，红表笔插V孔；3. 将表笔并联到被测点两端。",
+                "content": "## 故障核查\n\n显示屏出现 E1 代码时：关机并关闭电源，10 分钟后重新上电开机；仍显示代码则联系检修。",
                 "source": "local",
                 "chunk_id": "chunk_001",
-                "title": "万用表使用手册",
+                "title": "空调使用说明书",
                 "score": 0.9234
             },
             {
-                "content": "测量直流电压时需注意正负极性，红表笔接正极，黑表笔接负极。",
+                "content": "## 故障核查\n\n显示屏出现 E1 代码时：关机并关闭电源，10 分钟后重新上电开机；仍显示代码则联系检修。",
                 "source": "web",
                 "url": "https://example.com/guide",
                 "title": "电压测量指南",
@@ -336,8 +336,8 @@ if __name__ == "__main__":
             }
         ],
         "history": [
-            {"role": "user", "text": "万用表是什么？"},
-            {"role": "assistant", "text": "万用表是一种多功能电子测量仪器..."}
+            {"role": "user", "text": "空调怎么清洁滤网？"},
+            {"role": "assistant", "text": "空调滤尘网建议每月清洁一次..."}
         ],
     }
 

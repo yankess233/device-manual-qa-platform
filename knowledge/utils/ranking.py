@@ -1,4 +1,4 @@
-"""排序后处理：断崖截断与商品名置信度决策。
+"""排序后处理：断崖截断与产品名置信度决策。
 
 抽成纯函数的目的：这两段逻辑原本埋在 `rerank.py` / `item_name_confirm.py` 里，
 这两个模块 import 就会拉起 FlagEmbedding + torch，导致单测没法在 CI 里跑，
@@ -48,7 +48,7 @@ def decide_item_names(
     mid: float = 0.6,
     max_options: int = 3,
 ) -> tuple[list[str], list[str]]:
-    """按置信度把候选商品名分成「已确认」与「待用户选择」两组。
+    """按置信度把候选产品名分成「已确认」与「待用户选择」两组。
 
     - score >= high：高置信。只有 1 个→直接确认；多个→全部进选项（让用户选）；
       若其中存在与 `extracted` 完全同名的一个→直接确认它。

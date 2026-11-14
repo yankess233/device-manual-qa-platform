@@ -8,7 +8,7 @@ bge_m3 = BGEM3EmbeddingFunction(
 )
 
 # 2. 生成嵌入
-embeddings = bge_m3.encode_documents(["RS-12 数字万用表"])
+embeddings = bge_m3.encode_documents(["美的空调"])
 
 # 3. 提取向量
 dense_vector = embeddings["dense"][0].tolist()   # List[float], 长度 1024

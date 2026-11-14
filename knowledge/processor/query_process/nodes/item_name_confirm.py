@@ -20,7 +20,7 @@ from knowledge.utils.text_normalize import pick_by_token
 
 
 class ItemNameExtractor:
-    """LLM商品名称识别; 清洗LLM返回结果"""
+    """LLM产品名称识别; 清洗LLM返回结果"""
 
     def __init__(self, logger, node_name):
         self.logger = logger
@@ -28,13 +28,13 @@ class ItemNameExtractor:
 
     def extract_item_name(self, original_query: str, history_text: str) -> Dict[str, Any]:
         """
-        调用LLM进行商品名称识别
-        :param original_query: 原始问题   "万用表怎么测量电阻"
+        调用LLM进行产品名称识别
+        :param original_query: 原始问题   "空调怎么清洁滤网"
         :param history_text: 历史对话内容 10条  最近5轮对话
         :return:
             {
-                "item_names": ["RS-12 万用表"],
-                "rewritten_query": "RS-12 万用表怎么测量电阻"
+                "item_names": ["KFR-51LW/N8KS1-1P 空调"],
+                "rewritten_query": "KFR-51LW/N8KS1-1P 空调怎么清洁滤网"
             }
         """
 
@@ -92,7 +92,7 @@ class ItemNameExtractor:
 
 
 class ItemNameAligner:
-    """向量化查询,商品名称对齐评分,分数差过滤"""
+    """向量化查询,产品名称对齐评分,分数差过滤"""
 
     def __init__(self, logger, node_name, config: QueryConfig):
         self.logger = logger
@@ -100,22 +100,22 @@ class ItemNameAligner:
         self.config = config
 
     def match_vector(self, item_names) -> List[Dict[str, Any]]:
-        """向量匹配： 根据LLM识别商品名称，从Milvus中查询相似商品名称（hybrid混合向量检索）
-        args: 商品名称列表
+        """向量匹配： 根据LLM识别产品名称，从Milvus中查询相似产品名称（hybrid混合向量检索）
+        args: 产品名称列表
         return:  search_results: List[Dict[str, Any]]
             [
                 {
                     "extracted_name":extracted_name,
                     "matches": [
-                        {"item_name":"商品A1", "score":0.9},
-                        {"item_name":"商品A2", "score":0.6},
+                        {"item_name":"产品A1", "score":0.9},
+                        {"item_name":"产品A2", "score":0.6},
                     ]
                 },
                 {
                     "extracted_name":extracted_name,
                     "matches": [
-                        {"item_name":"商品B1", "score":0.9},
-                        {"item_name":"商品B2", "score":0.6},
+                        {"item_name":"产品B1", "score":0.9},
+                        {"item_name":"产品B2", "score":0.6},
                     ]
                 }
             ]
@@ -132,14 +132,14 @@ class ItemNameAligner:
         if not embedding_model:
             return search_results
 
-        # 3.将商品名称转换为向量,调用工具类，批量转换
+        # 3.将产品名称转换为向量,调用工具类，批量转换
         # item_names_embeddings ={
         #    "dense": [[],[]],
         #    "sparse": [{},{}]
         # }
         item_names_embeddings = generate_bge_m3_hybrid_vectors(embedding_model, item_names, True)
 
-        # 4.循环并装填：查询mivlus库中商品名称匹配。混合检索。
+        # 4.循环并装填：查询mivlus库中产品名称匹配。混合检索。
         for index, extract_item_name in enumerate(item_names):
             dense = item_names_embeddings["dense"][index]
             sparse = item_names_embeddings["sparse"][index]
@@ -183,26 +183,26 @@ class ItemNameAligner:
                 1.   score >=0.7  高分区
                 2.   0.6  <= score < 0.7  中分区
                 3.   score < 0.6  低分区
-            args: search_results   向量检索，根据商品名称，进行向量混合检索得到列表：
+            args: search_results   向量检索，根据产品名称，进行向量混合检索得到列表：
                 [
                     {
                         "extracted_name":extracted_name,
                         "matches": [
-                            {"item_name":"商品A1", "score":0.9},
-                            {"item_name":"商品A2", "score":0.8},
+                            {"item_name":"产品A1", "score":0.9},
+                            {"item_name":"产品A2", "score":0.8},
                         ]
                     },
                     {
                         "extracted_name":extracted_name,
                         "matches": [
-                            {"item_name":"商品A1", "score":0.65},
-                            {"item_name":"商品B2", "score":0.6},
+                            {"item_name":"产品A1", "score":0.65},
+                            {"item_name":"产品B2", "score":0.6},
                         ]
                     }
                 ]
             return :
-                confirmed: List[str] 高分区商品名称列表 [:3]  确认商品名称列表，立即三路检索
-                options: List[str] 中分区商品名称列表    选项商品名称列表[:3]，需要让用户选择商品名，再次进行问题解答
+                confirmed: List[str] 高分区产品名称列表 [:3]  确认产品名称列表，立即三路检索
+                options: List[str] 中分区产品名称列表    选项产品名称列表[:3]，需要让用户选择产品名，再次进行问题解答
         """
         confirmed: List[str] = []
         options: List[str] = []
@@ -212,8 +212,8 @@ class ItemNameAligner:
             extracted_name = search_result["extracted_name"]
             matches = sorted(search_result["matches"], key=lambda x: x["score"], reverse=True)
 
-            # 型号精确匹配短路：问题里出现 `RS-12` 这类型号 token，且候选商品名里也有，
-            # 直接确认，不再看相似度阈值——否则短 query 与长商品名相似度常年低于 0.6。
+            # 型号精确匹配短路：问题里出现 `KFR-51LW/N8KS1-1P` 这类型号 token，且候选产品名里也有，
+            # 直接确认，不再看相似度阈值——否则短 query 与长产品名相似度常年低于 0.6。
             token_hit = pick_by_token(extracted_name, [m["item_name"] for m in matches])
             if token_hit:
                 if token_hit not in confirmed:
@@ -253,7 +253,7 @@ class ItemNameAligner:
         sorted_high_confirmed_item_score = sorted(high_confirmed_item_score.items(), key=lambda x: x[1], reverse=True)
         high_score = sorted_high_confirmed_item_score[0][1]  # 最高分
 
-        # 保留高置信组中 与最高分差值小于阈值的商品名称
+        # 保留高置信组中 与最高分差值小于阈值的产品名称
         confirmed = [item_name for item_name, score in high_confirmed_item_score.items()
                      if high_score - score <= self.config.item_name_gap_abs]
         return confirmed
@@ -268,7 +268,7 @@ class ItemNameConfirmNode(BaseNode):
         self._item_name_aligner = ItemNameAligner(self.logger, self.name, self.config)
 
     def process(self, state: QueryGraphState) -> QueryGraphState:
-        """负责从用户问题中提取并确认商品名称
+        """负责从用户问题中提取并确认产品名称
             流程步骤：
                 1.获取历史会话
                     {
@@ -277,8 +277,8 @@ class ItemNameConfirmNode(BaseNode):
                       },
                       "session_id": "sess-f41icdzoh87mr5zeel1",
                       "role": "user",
-                      "text": "万用表怎么测量电阻",
-                      "rewritten_query": "万用表怎么测量电阻",
+                      "text": "空调怎么清洁滤网",
+                      "rewritten_query": "空调怎么清洁滤网",
                       "item_names": [],
                       "ts": 1783155727.498414
                     }
@@ -288,12 +288,12 @@ class ItemNameConfirmNode(BaseNode):
                       },
                       "session_id": "sess-f41icdzoh87mr5zeel1",
                       "role": "assistant",
-                      "text": "我不确定您指的是哪款产品。, 您是在询问以下产品吗: RS PRO RS-12 数字万用表、HAK 180 扫描仪？",
-                      "rewritten_query": "万用表怎么测量电阻",
+                      "text": "我不确定您指的是哪款产品。, 您是在询问以下产品吗: 美的 KFR-51LW/N8KS1-1P 变频落地式空调器、米家摄像机 扫描仪？",
+                      "rewritten_query": "空调怎么清洁滤网",
                       "item_names": [],
                       "ts": 1783155727.52313
                     }
-                2.LLM获取商品名称
+                2.LLM获取产品名称
                 3.向量化匹配
                 4.评分对齐
                 5.分数差异过滤(仅当confirmed长度大于1)
@@ -310,21 +310,21 @@ class ItemNameConfirmNode(BaseNode):
         for message in history_messages:
             history_text += f"{message['role']}: {message['text']}\n"
 
-        # 2.LLM获取商品名称
+        # 2.LLM获取产品名称
         extract_item_names: Dict[str, Any] = self._item_name_extractor.extract_item_name(original_query, history_text)
         print("extract_item_names=", extract_item_names)
-        # extract_item_names= {'item_names': ['RS-12数字万用表', 'HAK180'],
-        # 'rewritten_query': 'RS-12数字万用表如何测量电压，以及HAK180的介质规格有哪些？'}
+        # extract_item_names= {'item_names': ['美的空调', '米家摄像机'],
+        # 'rewritten_query': '美的空调如何测量电压，以及米家摄像机的介质规格有哪些？'}
         item_names = extract_item_names['item_names']
         rewritten_query = extract_item_names['rewritten_query']
-        # 去重（LLM 可能把同一商品重复输出），保持原顺序
+        # 去重（LLM 可能把同一产品重复输出），保持原顺序
         item_names = list(dict.fromkeys(item_names or []))
 
         # 3.向量化匹配
-        # LLM识别的商品名称 -> BGE-M3稠密+稀疏向量 -> Milvus item_name 集合混合检索 Top5
+        # LLM识别的产品名称 -> BGE-M3稠密+稀疏向量 -> Milvus item_name 集合混合检索 Top5
         # search_results = [
-        #     {"extracted_name": "万用表", "matches": [{"item_name": "RS-12 数字万用表", "score": 0.92}, ...]},
-        #     {"extracted_name": "HAK180", "matches": [{"item_name": "HAK180 扫描仪", "score": 0.78}, ...]},
+        #     {"extracted_name": "空调", "matches": [{"item_name": "美的空调", "score": 0.92}, ...]},
+        #     {"extracted_name": "米家摄像机", "matches": [{"item_name": "米家摄像机 扫描仪", "score": 0.78}, ...]},
         # ]
         search_results: List[Dict[str, Any]] = []
         align_failed = False  # 对齐链路是否异常（Milvus/嵌入模型不可用）
@@ -334,15 +334,15 @@ class ItemNameConfirmNode(BaseNode):
                 search_results = self._item_name_aligner.match_vector(item_names)
             except Exception as e:
                 align_failed = True
-                self.logger.error(f"商品名称向量匹配失败: {e}")
+                self.logger.error(f"产品名称向量匹配失败: {e}")
 
         # 4.评分对齐
-        # confirmed 高置信区商品名称（得分>=0.7）：与用户问题中的商品几乎一致，可直接进入三路检索
-        # options   中置信区商品名称（0.6<=得分<0.7）或高置信多选：需要用户二次选择
+        # confirmed 高置信区产品名称（得分>=0.7）：与用户问题中的产品几乎一致，可直接进入三路检索
+        # options   中置信区产品名称（0.6<=得分<0.7）或高置信多选：需要用户二次选择
         confirmed, options = self._item_name_aligner.score_align(search_results)
 
         # 5.分数差异过滤(仅当confirmed长度大于1)
-        # 与最高分差值超过 item_name_gap_abs 的商品视为噪声，丢弃
+        # 与最高分差值超过 item_name_gap_abs 的产品视为噪声，丢弃
         if len(confirmed) > 1:
             confirmed = self._item_name_aligner.score_filter(confirmed, search_results)
 
@@ -359,12 +359,12 @@ class ItemNameConfirmNode(BaseNode):
                 self.logger.info(f"单产品库兜底命中: {single_item}")
 
         # state['answer'] 存在   -> 反问用户（options）或兜底道歉，流程直接进答案节点
-        # state['answer'] 不存在 -> 商品名称已确认，继续走三路检索
+        # state['answer'] 不存在 -> 产品名称已确认，继续走三路检索
         # 6.决策更新状态
         self._decide(state, confirmed, options, rewritten_query)
 
         # 7.历史回填(仅当confirmed有值)
-        # 已确认的商品名称写回历史会话（MongoDB + 内存），供后续轮次指代消解
+        # 已确认的产品名称写回历史会话（MongoDB + 内存），供后续轮次指代消解
         self._backfill_history(history_messages, confirmed)
 
         # 历史会话按时间正序放入state，给后续节点（答案节点拼提示词）使用
@@ -395,17 +395,17 @@ class ItemNameConfirmNode(BaseNode):
         return None
 
     def _backfill_history(self, history_messages, confirmed):
-        """把已确认的商品名称回填到历史会话中此前没有商品名的用户消息
+        """把已确认的产品名称回填到历史会话中此前没有产品名的用户消息
 
         :param history_messages: MongoDB 查出的最近会话（按 ts 倒序）
-        :param confirmed: 已确认的商品名称列表，为空时不做回填
+        :param confirmed: 已确认的产品名称列表，为空时不做回填
         :return: 实际更新到 MongoDB 的消息条数
         """
-        # 1.未确认商品名称，不回填，避免把错误名称写进历史
+        # 1.未确认产品名称，不回填，避免把错误名称写进历史
         if not confirmed:
             return 0
 
-        # 2.筛选需要回填的用户消息：此前没有商品名称的
+        # 2.筛选需要回填的用户消息：此前没有产品名称的
         ids_to_update = []
         for message in history_messages:
             if message.get("role") != "user":
@@ -421,7 +421,7 @@ class ItemNameConfirmNode(BaseNode):
 
         # 3.持久化到 MongoDB
         updated = update_message_item_names(ids_to_update, confirmed)
-        self.logger.info(f"历史回填商品名称: {updated} 条 -> {confirmed}")
+        self.logger.info(f"历史回填产品名称: {updated} 条 -> {confirmed}")
         return updated
 
     def _decide(self, state, confirmed, options, rewritten_query):
@@ -430,8 +430,8 @@ class ItemNameConfirmNode(BaseNode):
         如果options存在,生成state["answer"] 提示用户选择
         否则：生成state["answer"] 抱歉
         :param state:
-        :param confirmed: 确认商品名称列表
-        :param options: 待选商品列表，需要用户来选择
+        :param confirmed: 确认产品名称列表
+        :param options: 待选产品列表，需要用户来选择
         :param rewritten_query: 查询问题  被LLM润色后问题【指代消除,润色】
         :return: None
         """
@@ -439,36 +439,36 @@ class ItemNameConfirmNode(BaseNode):
         state["rewritten_query"] = rewritten_query or state.get("original_query") or ""
 
         if confirmed:
-            # 商品名称已确认：清空answer，让流程图继续走三路检索
+            # 产品名称已确认：清空answer，让流程图继续走三路检索
             state["item_names"] = confirmed
             state["answer"] = ""
-            self.logger.info(f"商品名称已确认: {confirmed}")
+            self.logger.info(f"产品名称已确认: {confirmed}")
         elif options:
-            # 存在多个候选商品：不检索，直接反问用户选择
+            # 存在多个候选产品：不检索，直接反问用户选择
             state["item_names"] = []
             state["answer"] = (
                 f"我不确定您指的是哪款产品。您是在询问以下产品吗：{'、'.join(options)}？"
                 "请补充具体型号后我再为您查手册。"
             )
-            self.logger.info(f"商品名称存在歧义，反问候选: {options}")
+            self.logger.info(f"产品名称存在歧义，反问候选: {options}")
         else:
-            # 既没有确认商品，也没有候选商品：兜底话术
+            # 既没有确认产品，也没有候选产品：兜底话术
             state["item_names"] = []
             state["answer"] = "抱歉，我无法识别您询问的具体产品名称，请提供更准确的产品名称或型号。"
-            self.logger.info("未识别到可用的商品名称，返回兜底话术")
+            self.logger.info("未识别到可用的产品名称，返回兜底话术")
 
 
 if __name__ == '__main__':
     item_name_confirmed_node = ItemNameConfirmNode()
     init_state = {
         "session_id": "sess-f41icdzoh87mr5zeel1",
-        # "original_query": "RS-12数字万用表和H3C LA2608 室内无线网关的操作区别是什么?"
-        # "original_query": "RS-12数字万用表和RS-13数字万用表的区别?"
-        #"original_query": "RS-12数字万用表如何测量电压以及HAK180的介质规格有哪些?"
-        # "original_query": "RS-12数字万用表如何测量电压"  # 单个商品询问
-        # "original_query": "苹果手机怎么用?"  # 单个商品询问
-        # "original_query": "今天天气怎么样?"  # 单个商品询问
-        "original_query": "手表怎么测电压??"  # 单个商品询问
+        # "original_query": "美的空调和米家智能摄像机 云台版的操作区别是什么?"
+        # "original_query": "美的空调和美的 72 机型的区别?"
+        #"original_query": "美的空调如何测量电压以及米家摄像机的介质规格有哪些?"
+        # "original_query": "美的空调如何测量电压"  # 单个产品询问
+        # "original_query": "苹果手机怎么用?"  # 单个产品询问
+        # "original_query": "今天天气怎么样?"  # 单个产品询问
+        "original_query": "手表怎么测电压??"  # 单个产品询问
     }
     processed_state = item_name_confirmed_node(init_state)
     print(json.dumps(processed_state, indent=4, ensure_ascii=False))

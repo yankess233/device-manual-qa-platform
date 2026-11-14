@@ -1,11 +1,11 @@
 from pathlib import Path
 
 # 创建 Path 对象
-path = Path("D:/documents/万用表的使用.pdf")
+path = Path("D:/documents/空调说明书.pdf")
 
 # 常用属性
-path.name       # "万用表的使用.pdf" - 完整文件名
-path.stem       # "万用表的使用" - 不含扩展名的文件名
+path.name       # "空调说明书.pdf" - 完整文件名
+path.stem       # "空调说明书" - 不含扩展名的文件名
 path.suffix     # ".pdf" - 扩展名
 path.parent     # Path("D:/documents") - 父目录
 

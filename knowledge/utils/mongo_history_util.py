@@ -46,7 +46,7 @@ def save_chat_message(
         "role": role,  # 角色
         "text": text,  # 内容
         "rewritten_query": rewritten_query,  # 重写后问题
-        "item_names": item_names or [],  # 商品名列表
+        "item_names": item_names or [],  # 产品名列表
         "ts": ts,  # 时间戳
     }
 
@@ -87,10 +87,10 @@ def clear_history(session_id: str) -> int:
         return 0
 
 def update_message_item_names(ids_to_update, confirmed):
-    """把已确认的商品名回填到历史消息
+    """把已确认的产品名回填到历史消息
 
     :param ids_to_update: 需要回填的消息 _id 列表（ObjectId 或 16 进制字符串）
-    :param confirmed: 已确认的商品名列表
+    :param confirmed: 已确认的产品名列表
     :return: 实际修改的文档数
     """
     if not ids_to_update or not confirmed:
@@ -114,7 +114,7 @@ def update_message_item_names(ids_to_update, confirmed):
             {"_id": {"$in": object_ids}},
             {"$set": {"item_names": list(confirmed)}},
         )
-        logger.info(f"历史回填商品名: {result.modified_count} 条 -> {confirmed}")
+        logger.info(f"历史回填产品名: {result.modified_count} 条 -> {confirmed}")
         return result.modified_count
     except Exception as e:
         logger.error(f"Error updating item_names: {e}")

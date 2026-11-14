@@ -37,7 +37,7 @@ class ImportGraphState(TypedDict, total=False):
 
     # ==================== 路径信息 ====================
 
-    #E:\project\agent_project\shoper_brain\knowledge\processor\import_process\temp_dir\万用表RS-12的使用.pdf
+    #E:\project\agent_project\shoper_brain\knowledge\processor\import_process\temp_dir\美的空调.pdf
     import_file_path: str  # 导入文件路径,pdf所在路径，文件及路径的全路径。
 
     #E:\project\agent_project\shoper_brain\knowledge\processor\import_process\temp_dir\
@@ -46,14 +46,14 @@ class ImportGraphState(TypedDict, total=False):
     #E:\project\agent_project\shoper_brain\knowledge\processor\import_process\temp_dir\
     pdf_path: str  # PDF 文件路径，不含文件名称的pdf目录
 
-    #E:\project\agent_project\shoper_brain\knowledge\processor\import_process\temp_dir\万用表RS-12的使用_pipeline\auto\万用表RS-12的使用.md
+    #E:\project\agent_project\shoper_brain\knowledge\processor\import_process\temp_dir\美的空调_pipeline\auto\美的空调.md
     md_path: str  # 转换后Markdown 文件路径，具体的文件及目录全路径。
 
     # ==================== 文件信息 ====================
 
     file_title: str  # 文件标题（不含扩展名）
 
-    item_name: str  # 识别出的商品/产品名称(方便程序员用)
+    item_name: str  # 识别出的产品/产品名称(方便程序员用)
 
     # ==================== 处理中间数据 ====================
 

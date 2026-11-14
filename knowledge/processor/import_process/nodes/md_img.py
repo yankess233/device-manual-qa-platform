@@ -67,7 +67,7 @@ class MdFileHandler:
         :param new_md_content: 新md文档内容
         """
         self.logger.info("备份新MD文档")
-        # 万用表RS-12的使用.md  ->   万用表RS-12的使用_new.md
+        # 美的空调.md  ->   美的空调_new.md
         backup_path = md_path_obj.with_name(md_path_obj.parent.stem + "_new.md")
         with open(backup_path, 'w', encoding='utf-8') as f:
             f.write(new_md_content)
@@ -311,8 +311,8 @@ class ImageUploader:
         :return:
             remote_urls: Dict[str, str]  图片名称 对应 远程图片URL 字典
              {
-                '01ff135dc95789f7cb428c34df92a77869db4f4e70b83d663d1c485a17e416c1.jpg': 'http://127.0.0.1:9000/knowledge-base-files/万用表RS-12的使用/01ff135dc95789f7cb428c34df92a77869db4f4e70b83d663d1c485a17e416c1.jpg',
-                '10d2f007e02047a07d46e75a81db7f96811916c0f5ff662fa23ce215dadcbbe1.jpg': 'http://127.0.0.1:9000/knowledge-base-files/万用表RS-12的使用/10d2f007e02047a07d46e75a81db7f96811916c0f5ff662fa23ce215dadcbbe1.jpg',
+                '01ff135dc95789f7cb428c34df92a77869db4f4e70b83d663d1c485a17e416c1.jpg': 'http://127.0.0.1:9000/knowledge-base-files/美的空调/01ff135dc95789f7cb428c34df92a77869db4f4e70b83d663d1c485a17e416c1.jpg',
+                '10d2f007e02047a07d46e75a81db7f96811916c0f5ff662fa23ce215dadcbbe1.jpg': 'http://127.0.0.1:9000/knowledge-base-files/美的空调/10d2f007e02047a07d46e75a81db7f96811916c0f5ff662fa23ce215dadcbbe1.jpg',
             }
         """
         remote_urls: Dict[str, str] = {}
@@ -346,7 +346,7 @@ class ImageUploader:
 
 
             summaries = {
-                '01ff135dc95789f7cb428c34df92a77869db4f4e70b83d663d1c485a17e416c1.jpg': '万用表RS-12直流电流测量接线示意图（10A档位）',
+                '01ff135dc95789f7cb428c34df92a77869db4f4e70b83d663d1c485a17e416c1.jpg': '空调KFR-51LW/N8KS1-1P直流电流测量接线示意图（10A档位）',
                 '10d2f007e02047a07d46e75a81db7f96811916c0f5ff662fa23ce215dadcbbe1.jpg': '蜂鸣器功能符号指示'
             }
             remote_urls = {
@@ -354,7 +354,7 @@ class ImageUploader:
                 '10d2f007e02047a07d46e75a81db7f96811916c0f5ff662fa23ce215dadcbbe1.jpg': 'http://127.0.0.1:9000/bucket/10d2f007e02047a07d46e75a81db7f96811916c0f5ff662fa23ce215dadcbbe1.jpg'
             }
 
-            ![万用表RS-12直流电流测量接线示意图（10A档位）](http://127.0.0.1:9000/bucket/01ff135dc95789f7cb428c34df92a77869db4f4e70b83d663d1c485a17e416c1.jpg)
+            ![空调KFR-51LW/N8KS1-1P直流电流测量接线示意图（10A档位）](http://127.0.0.1:9000/bucket/01ff135dc95789f7cb428c34df92a77869db4f4e70b83d663d1c485a17e416c1.jpg)
             ![蜂鸣器功能符号指示](http://127.0.0.1:9000/bucket/10d2f007e02047a07d46e75a81db7f96811916c0f5ff662fa23ce215dadcbbe1.jpg)
 
         :param remote_urls:  图片名称 对应 远程图片URL 字典
@@ -429,7 +429,7 @@ if __name__ == "__main__":
 
     node = MarkDownImageNode()
     state = {
-        "md_path": r"E:\project\agent_project\shoper_brain\knowledge\processor\import_process\temp_dir\万用表RS-12的使用\markdown.md"
+        "md_path": r"E:\project\agent_project\shoper_brain\knowledge\processor\import_process\temp_dir\美的空调\markdown.md"
     }
     processed_state = node(state)
     print(json.dumps(processed_state, ensure_ascii=False, indent=4))

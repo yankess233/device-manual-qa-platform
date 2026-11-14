@@ -61,7 +61,7 @@ class QueryConfig:
         default_factory=lambda: float(os.getenv("EMBEDDING_SPARSE_WEIGHT", "0.5"))
     )
 
-    # ==================== 商品确认节点配置 ====================
+    # ==================== 产品确认节点配置 ====================
     item_name_high_confidence: float = field(
         default_factory=lambda: float(os.getenv("ITEM_NAME_HIGH_CONFIDENCE", "0.7"))
     )

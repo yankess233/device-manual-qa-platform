@@ -15,8 +15,8 @@ from knowledge.utils.text_normalize import normalize_item_name
 
 class ItemNameRecognitionNode(BaseNode):
     """
-        商品名称识别
-        利用3个chunk的内容上下文 小于2500字符。通过提示词模板让LLM识别出商品名称及型号。将商品名称信息Bge-m3向量化存Milvus，供后续匹配使用。
+        产品名称识别
+        利用3个chunk的内容上下文 小于2500字符。通过提示词模板让LLM识别出产品名称及型号。将产品名称信息Bge-m3向量化存Milvus，供后续匹配使用。
     """
 
     name = "item_name_recognition_node"
@@ -28,10 +28,10 @@ class ItemNameRecognitionNode(BaseNode):
         # state对象中属性不合法： StateFieldError
         file_title, chunks, item_name_chunk_k, item_name_chunk_size = self._valiedate_state(state)
 
-        # 2.构建识别商品名称上下文，取前3个切片，限制字符数2500。
+        # 2.构建识别产品名称上下文，取前3个切片，限制字符数2500。
         item_name_recognition_context:str = self._prepare_context(chunks,item_name_chunk_k,item_name_chunk_size)
 
-        # 3.调用LLM,获取客户端AIClients，识别商品名称。 提示词模板；  降级：file_title
+        # 3.调用LLM,获取客户端AIClients，识别产品名称。 提示词模板；  降级：file_title
         item_name = self._recognition_item_name(file_title,item_name_recognition_context)
 
         # 4.BGE-M3向量化
@@ -81,7 +81,7 @@ class ItemNameRecognitionNode(BaseNode):
         :param chunks: List[Dict[str, Any]] 切片列表
         :param item_name_chunk_k: 提取上下文的切片数量限制
         :param item_name_chunk_size: LLM提示词模板参数长度的限制。
-        :return: 用于提取商品名称的上下文参考内容。
+        :return: 用于提取产品名称的上下文参考内容。
         """
         #取前三个chunk
         chunks = chunks[0:item_name_chunk_k]
@@ -103,10 +103,10 @@ class ItemNameRecognitionNode(BaseNode):
 
     def _recognition_item_name(self, file_title, item_name_recognition_context) -> str:
         """
-        3.调用LLM,获取客户端AIClients，识别商品名称。 提示词模板；  降级：file_title
+        3.调用LLM,获取客户端AIClients，识别产品名称。 提示词模板；  降级：file_title
         :param file_title: 文件名称
-        :param item_name_recognition_context: 识别商品名称的上下文参考内容
-        :return: 商品名称
+        :param item_name_recognition_context: 识别产品名称的上下文参考内容
+        :return: 产品名称
         """
 
         #获取LLM模型客户端对象
@@ -123,14 +123,14 @@ class ItemNameRecognitionNode(BaseNode):
 
         #处理LLM模型返回结果失败，降级处理
         if not llm_response or llm_response.content=="UNKNOWN":
-            self.logger.error("LLM模型调用失败,降级处理,用文件名称作为商品名称")
+            self.logger.error("LLM模型调用失败,降级处理,用文件名称作为产品名称")
             return file_title
 
         #获取响应内容：模型可能返回 JSON / 代码围栏 / 带引号字符串，统一剥成纯文本。
         # 不剥的话，{"item_name": "..."} 会被原样写进 Milvus 标量字段（BC-01）。
         item_name = normalize_item_name(llm_response.content)
         if not item_name:
-            self.logger.error("LLM 返回空商品名，降级用文件名称")
+            self.logger.error("LLM 返回空产品名，降级用文件名称")
             return file_title
 
         return item_name
@@ -156,7 +156,7 @@ class ItemNameRecognitionNode(BaseNode):
             # 返回 稠密向量，稀疏向量
             return dense_vector,sparse_vector
         except Exception as e:
-            self.logger.error("BGE-M3向量化商品名称失败", e)
+            self.logger.error("BGE-M3向量化产品名称失败", e)
             return None,None
 
     def insert_milvus(self, file_title, item_name, dense_vector, sparse_vector):
@@ -190,7 +190,7 @@ class ItemNameRecognitionNode(BaseNode):
             milvus_client.insert(item_name_collection,[data])
             self.logger.info("保存数据成功...")
         except Exception as e:
-            self.logger.error("保存商品名称数据失败", e)
+            self.logger.error("保存产品名称数据失败", e)
 
     def _create_item_name_collection(self, collection_name, milvus_client):
         schema = milvus_client.create_schema()
@@ -221,13 +221,13 @@ if __name__ == '__main__':
     setup_logging()
 
     # 1. 读取chunk.json
-    chunk_json_path = r"E:\project\agent_project\shoper_brain\knowledge\processor\import_process\temp_dir\万用表RS-12的使用\chunks.json"
+    chunk_json_path = r"E:\project\agent_project\shoper_brain\knowledge\processor\import_process\temp_dir\美的空调\chunks.json"
     with open(chunk_json_path, "r", encoding="utf-8") as f:
         chunk_content = json.load(f)
 
     # 2. 构建state
     state = {
-        "file_title": "万用表RS-12的使用_new",
+        "file_title": "美的空调_new",
         "chunks": chunk_content
     }
 
@@ -238,6 +238,6 @@ if __name__ == '__main__':
     processed_state = node(state)
 
     # 5. 输出结果
-    print(f"商品名: {processed_state.get('item_name')}")
+    print(f"产品名: {processed_state.get('item_name')}")
     print(f"chunks数量: {len(processed_state.get('chunks', []))}")
     print(f"首5个chunk是否含item_name: {'item_name' in processed_state['chunks'][0]}")

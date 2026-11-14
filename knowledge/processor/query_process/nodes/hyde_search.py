@@ -102,7 +102,7 @@ class HyDeSearchNode(BaseNode):
         """
         生成假设性文档  根据问题 -> LLM  ->  200-300字的问题答案
         :param validated_rewritten_query: 用户问题
-        :param validated_item_names: 商品名称列表
+        :param validated_item_names: 产品名称列表
         :return: str  假设性文档
         """
         # 1.获取LLM客户端
@@ -145,13 +145,13 @@ if __name__ == "__main__":
     print("=" * 60)
 
     mock_state = {
-        "rewritten_query": "RS-12 数字万用表如何测量直流电压？",
-        "item_names": ["RS-12 数字万用表"],
+        "rewritten_query": "美的空调如何测量直流电压？",
+        "item_names": ["美的空调"],
     }
 
     print("【输入状态】:")
     print(f"  查询: {mock_state['rewritten_query']}")
-    print(f"  商品: {mock_state['item_names']}")
+    print(f"  产品: {mock_state['item_names']}")
     print("-" * 60)
 
     node = HyDeSearchNode()
@@ -180,8 +180,8 @@ if __name__ == "__main__":
 			{
 			'title': '## 直流电压测量', 
 			'chunk_id': 467775438085177891, 
-			'item_name': 'RS-12 数字万用表', 
-			'content': '## 直流电压测量\n\n注意：正打开或关闭电源时不要进行此项测量，瞬间的强大电压将损坏仪表。\n1. 将功能转盘置于V DC的位置。\n2. 将黑色表笔插入负极COM端口，红色表笔插入正极V端口。\n3. 将表笔尖端接触被测物,确保极性正确(红色连正极,黑色连负极)。\n4. 显示屏上读取电压值。显示屏显示了精确的小数点，数值。若极性颠倒，数值前将显示负号。'
+			'item_name': '美的空调', 
+			'content': '## 故障核查\n\n显示屏出现 E1 代码时：关机并关闭电源，10 分钟后重新上电开机；仍显示代码则联系检修。'
 			}
 	}, 
 
@@ -193,8 +193,8 @@ if __name__ == "__main__":
 			{
 				'title': '## 直流电流测量- 1', 
 				'chunk_id': 467775438085177893, 
-				'item_name': 'RS-12 数字万用表', 
-				'content': '## 直流电流测量- 1\n\n注意：在10A情况下测量时间不能超过30秒，否则将可能损坏仪表或表笔。\n![直流电流测量接线示意图（10A档位）](http://127.0.0.1:9000/knowledge-base-files/万用表RS-12的使用/8eb1e59b1e3f5e200f6d947da47dcd767fe061b91e72b1ba5325869677dcdad2.jpg)\n1. 将黑色表笔插入负极COM端口。\n2. 测量直流200mA 以下的电流,将功能转盘置于最高DC mA档位，并将红色表笔插入mA端口。\n3. 测量直流10A时,将功能转盘置于10A档位，并将红色表笔(10A)端口。\n4. 断开被测电路的电源。在你想测量电流的位置打开电路绝缘层。\n5. 将黑色表笔接触被测电路的负极，红色表笔接触被测电路正极。\n6. 接通电源。\n7. 在显示屏上读取读数。进行mA DC测量时,不断重调功能转盘至低mA DC档位获得高分辨率读数.读数由精确的小数点和数值表示。'
+				'item_name': '美的空调', 
+				'content': '## 故障核查\n\n显示屏出现 E1 代码时：关机并关闭电源，10 分钟后重新上电开机；仍显示代码则联系检修。'
 			}
 	}
 ]

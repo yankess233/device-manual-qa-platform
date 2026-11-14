@@ -19,7 +19,7 @@ print()
 # 等价写法：mineru-kit parse <pdf> -o <目录> -f zip --tier standard --ocr-mode auto
 # 关键：必须 -f zip，才会把图片外置成 images/（默认 -f markdown 只写一个 md，图片会丢）
 OUT_DIR = r"E:\project\agent_project\shoper_brain\knowledge\processor\import_process\temp_dir"
-PDF_PATH = r"F:\BaiduNetdiskDownload\temp_dir\万用表RS-12的使用.pdf"
+PDF_PATH = r"F:\BaiduNetdiskDownload\temp_dir\美的空调.pdf"
 MINERU_KIT = r"E:\project\agent_project\shoper_brain\knowledge\.venv\Scripts\mineru-kit.exe"
 
 result = subprocess.run(
