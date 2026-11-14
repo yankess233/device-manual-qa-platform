@@ -1,25 +1,17 @@
-# 企业级设备手册智能问答平台
+# 家电说明书智能问答平台
 
 [![CI](https://github.com/yankess233/device-manual-qa-platform/actions/workflows/ci.yml/badge.svg)](https://github.com/yankess233/device-manual-qa-platform/actions/workflows/ci.yml)
+![Python](https://img.shields.io/badge/python-3.12-3776AB)
+![Milvus](https://img.shields.io/badge/vector--db-Milvus%202.5-00A1EA)
 
-> 把厚重的 PDF / Markdown 设备手册变成可检索、可对话、能配图回答的知识库。
-> 基于 **LangGraph + Milvus + BGE-M3 + MinerU + 大模型** 的端到端 RAG 工程实现。
+把几十页的家电说明书变成**可按型号检索、能出操作步骤、带原文配图、答不出来会认怂**的问答服务。
 
-<p align="left">
-  <img alt="Python" src="https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white">
-  <img alt="FastAPI" src="https://img.shields.io/badge/FastAPI-0.11x-009688?logo=fastapi&logoColor=white">
-  <img alt="LangGraph" src="https://img.shields.io/badge/LangGraph-Workflow-1C3C3C">
-  <img alt="Milvus" src="https://img.shields.io/badge/Milvus-2.4+-00A1EA">
-  <img alt="BGE-M3" src="https://img.shields.io/badge/BGE--M3-Dense%2BSparse-FF6F00">
-  <img alt="MinerU" src="https://img.shields.io/badge/MinerU-4.x-6C47FF">
-  <img alt="MinIO" src="https://img.shields.io/badge/MinIO-Object%20Storage-C72E49">
-  <img alt="MongoDB" src="https://img.shields.io/badge/MongoDB-History-47A248?logo=mongodb&logoColor=white">
-  <img alt="Eval" src="https://img.shields.io/badge/Eval-50%20queries%20%C2%B7%205%20ablations-4B8BBE">
-</p>
+语料是两台真实设备的官方说明书（美的变频空调 40 页、米家云台摄像机 16 页），
+链路覆盖 **MinerU 解析 → 标题感知切分 → BGE-M3 混合检索 → RRF → 精排 → 断崖截断 → 约束生成 → SSE 流式**，
+并配了一套**可复现的评测**：两套语料、80 道标注题、5 组消融、以及"调参到底有没有用"的对照实验。
 
-> **有评测**：50 题分层评测集 + A1~A5 检索消融 + 答案层模型 A/B，见 [评测](#评测) 与 [`eval/`](eval/README.md)。
-> 结论不是"全都好用"：实测 **HyDE 在这个业务上是负收益**（三轮 run 都没赢过纯混合检索，建议下线）；
-> **qwen3.8-flash 的思考模式必须关**（HyDE p95 从 6.6 s 涨到 47.6 s）。两条都写进了[已知限制](#已知限制与规划)。
+> 这个项目的重点不是"接上大模型"，而是**每一步都能说清楚它值多少**：
+> 精排带来多少 MRR、断崖截断省多少上下文、HyDE 在什么场景下是负收益、调 `max_k` 为什么不可能提 Hit@5。
 
 ---
 
@@ -33,238 +25,201 @@
 - [技术栈](#技术栈)
 - [目录结构](#目录结构)
 - [快速开始](#快速开始)
+- [语料与评测](#语料与评测)
 - [接口文档](#接口文档)
 - [数据模型](#数据模型)
 - [关键配置项](#关键配置项)
-- [评测](#评测)
-- [已知限制与规划](#已知限制与规划)
+- [工程化能力](#工程化能力)
+- [已知限制](#已知限制)
+- [路线图](#路线图)
 - [更新记录](#更新记录)
 
 ---
 
 ## 项目简介
 
-企业内部沉淀着大量设备手册：万用表、示波器、网关、交换机、工业控制器…… 它们通常是几十上百页的 PDF，图文混排、表格密集，关键词搜索找不到答案，翻页定位极其低效。
+家电说明书的典型使用场景是"我家里这台机器出了个状况，说明书第几页怎么说的"。
+直接问大模型会编，直接全文塞进去又贵又不可溯源。这个项目要解决三件事：
 
-本项目把「手册」加工成「可对话的知识」：
+1. **先认机器，再答题**。说明书是"一型号一本册"，不确认型号就在多本手册里瞎捞。
+   系统用 LLM 抽取产品名（含多轮指代消解）→ 向量匹配主体库 → 高置信直接确认、中置信反问用户、
+   型号 token 精确命中则短路确认。
+2. **检索要准，且知道为什么准**。稠密（语义）+ 稀疏（型号/数值）+ HyDE（假设文档）三路召回，
+   RRF 融合后用 cross-encoder 精排，再用断崖截断砍掉陪跑的尾部。
+3. **答案受约束、可追溯**。Prompt 要求只依据参考片段作答，没有就说不知道；
+   需要图时从原文片段里取图；答案带 `[n]` 角标，流式返回。
 
-1. **入库**：PDF 经 MinerU 解析为结构化 Markdown，图片被 VLM 语义化并托管到对象存储；
-2. **切分**：按标题层级切分 + 长切短合 + 表格线性化，切片自带 `文件 / 父标题 / 标题 / 商品名` 四级上下文；
-3. **检索**：BGE-M3 稠密 + 稀疏双向量混合检索，RRF 融合后 bge-reranker 精排，再按分数断崖自适应截断
-   （另实现了 HyDE 与联网 MCP 两路召回，但实测 HyDE 在本业务为负收益，详见[评测](#评测)）；
-4. **回答**：大模型基于命中切片生成答案，支持 SSE 流式输出，并可直接回显手册原图（接线图、示意图、结构图）。
-
-同时提供两条独立的 FastAPI 服务与两套零依赖原生页面：**知识导入台**（上传 + 节点级进度）与**问答客服台**（流式对话 + 历史会话）。
+工程上没有停在"能跑"：API Key 鉴权、上传校验（修过真实路径穿越漏洞）、
+Redis 任务态（支持多 worker）、JSON 结构化日志、Locust 压测、Docker 编排、GitHub Actions CI。
 
 ## 核心能力
 
-| 能力 | 说明 |
+| 能力 | 实现要点 |
 | --- | --- |
-| 手册结构化解析 | MinerU 4.x `parse -f zip --tier standard --ocr-mode auto`，保留 Markdown + images + 中间 JSON，表格与公式不丢 |
-| 图片语义化 | 按「最近章节标题 + 上下 200 字正文」构造上下文，调用视觉大模型生成图片摘要，替换为 MinIO 公网链接，答案可直接带图 |
-| 结构化切分 | 识别代码围栏内的 `#` 防止误切；标题层级维护 `hierarchy[]` 还原父标题；超长切片二次切分、过短切片合并；子切片标题带 `（n/N）` 序号，不用正文首句充当标题 |
-| 表格降维 | HTML / Markdown 表格统一线性化为「列名: 值」文本，避免表格被切断后语义丢失 |
-| 商品主体识别 | LLM 从手册前若干切片抽取「品牌 + 型号 + 品类」写入 `item_name`，查询时作为标量过滤条件，避免跨设备串答案 |
-| 商品名对齐 | 用户口述的「万用表」在 `item_name` 集合做混合检索对齐到库中规范名；分数差过滤 + 高置信锁定 / 歧义反问 / 历史回填 |
-| 混合检索 | 同一份文本同时产出 dense（COSINE）与 sparse（IP）向量，Milvus `WeightedRanker(0.5, 0.5)` 融合 |
-| 多路召回 | 向量检索 ∥ HyDE 检索 ∥ 联网 MCP 搜索 三路并行；两路向量经 `join` 汇合走 RRF 去重，联网结果直连 `rerank` |
-| 动态精排 | bge-reranker-large 打分，按分数断崖（gap ≥ 0.15）自适应截断 top-k（3~10），而非固定取前 N |
-| 流式问答 | SSE 三类事件：`progress`（节点进度）/ `delta`（增量 token）/ `final`（完整答案） |
-| 会话记忆 | MongoDB `chat_message` 持久化，查询前做指代消解（"它怎么测电阻" → "RS-12 数字万用表怎么测电阻"） |
-| 任务可观测 | 每个导入任务 8 位 task_id，逐节点记录 running / done / 耗时，前端 1.5s 轮询渲染时间线 |
+| PDF 解析 | MinerU 4.x 出 Markdown + 结构化内容 + 图片；扫描版走 OCR |
+| 图片直链 | 图片转存 MinIO，MD 中的相对路径改写为可访问 URL；文件名保留 `page_N_image_M` |
+| 表格可检索 | HTML/Markdown 表格线性化为 `列名: 值`，覆盖合并单元格、无表头 KV 表 |
+| 标题感知切分 | 按 `#`/`##` 切；超长二次切（1000 字）、过短合并（500 字）、代码围栏保护 |
+| 主体识别 | LLM 抽「品牌+型号+品类」；JSON 污染自动剥离；型号 token 精确匹配短路 |
+| 混合检索 | BGE-M3 稠密 + 稀疏，`WeightedRanker(0.5, 0.5)` |
+| 融合 | RRF（k=60），多路结果按 `chunk_id` 累加，天然去重 |
+| 精排 | `bge-reranker-large` 逐对打分重排 |
+| 断崖截断 | 相邻分差 >0.15 处截断，至少 3 条、最多 10 条 |
+| 多轮对话 | MongoDB 存历史，指代消解后回填产品名 |
+| 流式输出 | SSE 三类事件：`progress` / `delta` / `final` |
+| 任务可视化 | 导入 8 个节点的进度、耗时实时回传前端时间线 |
 
 ## 系统架构
 
-```mermaid
-flowchart LR
-    subgraph Client["前端（原生 HTML）"]
-        P1["import.html<br/>知识导入台"]
-        P2["chat.html<br/>问答客服台"]
-    end
-
-    subgraph ImportSvc["导入服务 :8000"]
-        I1["/upload"]
-        I2["/status/{task_id}"]
-        IG["LangGraph<br/>导入流程图"]
-    end
-
-    subgraph QuerySvc["查询服务 :8001"]
-        Q1["/query · /stream · /history"]
-        QG["LangGraph<br/>查询流程图"]
-    end
-
-    subgraph Storage["存储与模型"]
-        MINIO[("MinIO<br/>原始文件 + 图片")]
-        MILVUS[("Milvus<br/>chunks · item_name")]
-        MONGO[("MongoDB<br/>chat_message")]
-        LLM["LLM / VLM<br/>DashScope 兼容接口"]
-        BGE["BGE-M3<br/>Embedding + Reranker"]
-        MINERU["MinerU<br/>PDF 解析"]
-    end
-
-    P1 --> I1 --> IG
-    IG --> MINERU
-    IG --> LLM
-    IG --> MINIO
-    IG --> BGE
-    IG --> MILVUS
-    I2 --> P1
-
-    P2 --> Q1 --> QG
-    QG --> BGE
-    QG --> MILVUS
-    QG --> LLM
-    QG --> MONGO
-    QG -->|"SSE"| P2
+```
+┌────────────────────── 导入链路（离线，每份文档一次） ──────────────────────┐
+│                                                                            │
+│  PDF ──▶ 上传校验 ──▶ MinerU 解析 ──▶ 图片转存 MinIO + VLM 图注            │
+│                                    │                                       │
+│                                    ▼                                       │
+│            标题感知切分（表格线性化） ──▶ 主体名称识别（LLM）               │
+│                                    │                                       │
+│                                    ▼                                       │
+│                 BGE-M3 稠密+稀疏向量化 ──▶ 写入 Milvus                     │
+│                                            ├─ 切片集合 kb_chunks_home_v1   │
+│                                            └─ 主体集合 kb_item_names_home_v1│
+└────────────────────────────────────────────────────────────────────────────┘
+                                     │
+┌────────────────────── 查询链路（在线，每次请求） ──────────────────────────┐
+│                                                                            │
+│  问题 ──▶ 主体抽取（LLM，带历史） ──▶ 主体确认（向量匹配 + 型号短路）       │
+│              │                                                             │
+│              ▼                                                             │
+│        三路召回：稠密 / 稀疏 / HyDE ──▶ RRF 融合 ──▶ bge-reranker 精排     │
+│              │                                                             │
+│              ▼                                                             │
+│        断崖截断 ──▶ 上下文组装（≤12000 字） ──▶ 约束生成 ──▶ SSE 流式      │
+└────────────────────────────────────────────────────────────────────────────┘
+        │                        │                        │
+   Milvus（向量+标量）      MinIO（原图/原文件）      MongoDB（会话历史）
 ```
 
 ## 导入流水线
 
-`knowledge/processor/import_process/main_graph.py` —— 7 节点串行图，入口按后缀分流。
-
-```mermaid
-flowchart TD
-    E["entry_node<br/>校验路径 / 判定 .pdf｜.md"] -->|".pdf"| PDF["pdf_to_md_node<br/>MinerU 解析 + 解包"]
-    E -->|".md"| IMG["md_img_node"]
-    PDF --> IMG["md_img_node<br/>VLM 图片摘要 + MinIO 上传"]
-    IMG --> SPLIT["document_split_node<br/>标题切分 / 长切短合 / 表格线性化"]
-    SPLIT --> ITEM["item_name_recognition_node<br/>LLM 识别商品名 + 双向量入库"]
-    ITEM --> EMB["bge_embedding_node<br/>item_name + content → dense/sparse"]
-    EMB --> MV["import_milvus_node<br/>建集合 / 建索引 / 批量写入"]
-```
-
-| # | 节点 | 职责 | 关键实现 |
+| # | 节点 | 做什么 | 失败模式与处理 |
 | --- | --- | --- | --- |
-| 1 | `entry_node` | 路径校验、按扩展名路由、提取 `file_title` | `ValidationError` 兜底，非 pdf/md 直接中断 |
-| 2 | `pdf_to_md_node` | 调 `mineru-kit parse` 生成 zip，解包出 `markdown.md + images/` | `--tier standard`（小模型 + VLM）、`--ocr-mode auto`、行缓冲实时打印 |
-| 3 | `md_img_node` | 扫描图片 → 定位章节上下文 → VLM 生成摘要 → 上传 MinIO → 回写链接 | 三段式：`ImageScanner` / `VLMSummarizer`（20 rpm 限流）/ `ImageUploader` |
-| 4 | `document_split_node` | 标题切 initial section → 超长二次切 → 过短合并 → 组装 chunk | `hierarchy[7]` 还原父标题、代码围栏感知、`<table>` 线性化、子切片标题追加 `（n/N）` 序号 |
-| 5 | `item_name_recognition_node` | 取前 3 个切片（≤2500 字）让 LLM 输出商品名，写入 item_name 集合 | 结构化 Prompt + `UNKNOWN` 兜底 |
-| 6 | `bge_embedding_node` | 以 `item_name + "\n" + content` 为嵌入文本，批量生成双向量 | batch=8，CSR → `{token_id: weight}` |
-| 7 | `import_milvus_node` | 建集合（dynamic field）、建双索引、批量 insert 并回填 `chunk_id` | 门面 + 建造者模式：SchemaBuilder / IndexBuilder / Inserter |
+| 1 | 上传文件 | 文件名净化、后缀白名单、50MB 流式限额；本地 + MinIO 双写 | 超限删半成品；非法后缀 400 |
+| 2 | 检查文件 | 校验路径与文件存在 | 缺失抛 `ValidationError` |
+| 3 | PDF→Markdown | 调 `mineru-kit` 子进程，产出 `markdown.md` + `structured_content.json` + `images/` | 解析器偶发显存报错，重试即过 |
+| 4 | 图片处理 | 图片上传 MinIO、改写链接、VLM 生成图注 | 单图失败跳过，不阻断整条链路 |
+| 5 | 文档切分 | 按标题切、超长二次切、过短合并、表格线性化 | 超长章节无二级标题会导致同标题多片（见已知限制） |
+| 6 | 主体名称识别 | LLM 读前 3 片抽产品名，写主体集合并回填每个切片 | 返回 JSON 串时用 `normalize_item_name` 剥离 |
+| 7 | 向量生成 | BGE-M3 同时产出稠密与稀疏向量 | 模型不可用则该任务失败 |
+| 8 | 导入 Milvus | 建集合、建索引、insert | 集合已存在则复用 |
 
-导入阶段同时完成**文件双写**：本地 `knowledge/temp_data/{YYYYMMDD}/{task_id}/` 与 MinIO `origin_files/{YYYYMMDD}/{filename}`，便于溯源与重放。
+实测耗时（RTX 3060）：
+
+| 文档 | 页数 | 切片 | 总耗时 | 其中 PDF→MD | 其中图注 |
+| --- | --- | --- | --- | --- | --- |
+| 美的变频空调使用安装说明书 | 40 | 50 | **476 s** | 337 s | 124 s |
+| 米家智能摄像机云台版说明书 | 16 | 22 | **81 s** | 67 s | 14 s |
 
 ## 查询流水线
 
-`knowledge/processor/query_process/main_graph.py` —— 先确认主体，再并行三路召回，融合精排后生成答案。
+### 1. 主体确认
 
-```mermaid
-flowchart TD
-    S["item_name_confirm<br/>历史指代消解 + 商品名对齐"] -->|"已有 answer（中置信反问）"| A["answer_output"]
-    S -->|"继续检索"| M[["multi_search（分发）"]]
-    M --> V["search_embedding<br/>Milvus 混合检索"]
-    M --> H["search_embedding_hyde<br/>HyDE 假设性文档检索"]
-    M --> W["web_search_mcp<br/>百炼联网搜索"]
-    V --> J[["join（向量两路汇合）"]]
-    H --> J
-    J --> R["rrf<br/>Reciprocal Rank Fusion"]
-    R --> RR["rerank<br/>bge-reranker-large + 断崖截断"]
-    W --> RR
-    RR --> A
-```
+- **抽取**：LLM 结合最近 5 轮历史，抽 `item_names` 并改写问题（指代消解）；
+- **匹配**：用抽到的名字去主体集合做混合检索，得到候选与分数；
+- **决策**：
+  - 分数 ≥0.7 且唯一 → 直接确认；
+  - 0.6~0.7 或多条高分 → **反问用户选哪个**；
+  - 型号 token 精确命中（如 `KFR-51LW/N8KS1-1P`）→ 短路确认；
+  - 完全无候选且库里只有一个产品 → 单产品兜底确认。
 
-| # | 节点 | 职责 | 关键参数 |
-| --- | --- | --- | --- |
-| 1 | `item_name_confirm` | 读最近会话 → LLM 抽取 `item_names` 与 `rewritten_query` → 在 `item_name` 集合混合检索对齐 → 分数差过滤 → 置信度决策（锁定 / 反问 / 兜底）→ 历史回填 | 高置信 0.7 / 中置信 0.6 / 最多 5 个候选 / 差值 0.15 |
-| 2 | `search_embedding` | `item_names` 作为 `expr` 标量过滤，dense + sparse 混合检索 | `limit=10`，权重 0.5/0.5，`norm_score=True` |
-| 3 | `search_embedding_hyde` | 先让 LLM 写一段"标准答案式"技术文档，再用它去检索 | `limit=5` |
-| 4 | `web_search_mcp` | 通过 `MCPServerStreamableHttp` 调 `bailian_web_search`，补足手册外知识 | `count=3`，超时 300s |
-| 5 | `rrf` | 两路向量召回结果按名次融合，chunk_id 去重 | `k=60`，`max_results=10` |
-| 6 | `rerank` | 等待「RRF 结果 + 联网结果」双上游就绪后合并，交叉编码器打分并按相邻分数断崖动态截断 | `top_k ∈ [3, 10]`，`gap_abs=0.15` |
-| 7 | `answer_output` | 组装 `参考内容 + 历史对话 + 相关商品 + 问题`，流式或同步生成；解析 `【图片】` 区块 | 上下文预算 12000 字，历史 10 条 |
+### 2. 三路召回
 
-`answer_output` 会先按字符预算装配切片上下文（保留标题与图片链接），再补入历史对话；若命中切片里含图片，模型在答案末尾输出 `【图片】` 区块，前端解析后直接渲染原图。
+| 路 | 手段 | 解决的问题 |
+| --- | --- | --- |
+| 稠密 | BGE-M3 句向量 | 同义改写（"清洗滤网" ↔ "滤尘网清洁"） |
+| 稀疏 | BGE-M3 稀疏权重 | 型号、数值、专有名词的精确匹配 |
+| HyDE | LLM 先写"假想答案"再检索 | 问题过短、与文档用词差距大 |
+
+稠密与稀疏用 `WeightedRanker(0.5, 0.5)` 融合，HyDE 那一路与主路再做 RRF（k=60）。
+
+### 3. 精排与截断
+
+- `bge-reranker-large` 对 `(query, chunk)` 逐对打分重排，**单步增益最大**；
+- 断崖截断：从前往后找第一处相邻分差 >0.15 的位置截断，至少 3 条、最多 10 条。
+  它的目标不是提命中，而是**在信息量已经衰减的尾部省上下文**。
+
+### 4. 生成与流式
+
+Prompt 给模型三样东西：带 `[n]` 角标的参考片段、历史对话、确认到的产品名；
+要求只依据参考片段作答、无据则弃答、需要配图时在末尾输出 `【图片】` 区块。
+SSE 分三类事件：`progress`（节点进度）、`delta`（逐字增量）、`final`（完整答案 + 图片）。
 
 ## 技术栈
 
-| 分层 | 选型 | 用途 |
-| --- | --- | --- |
-| Web 框架 | FastAPI + Uvicorn | 两条独立服务、SSE 流式响应、CORS、静态页面挂载 |
-| 工作流编排 | LangGraph | 导入/查询状态图、条件边、并行分发与汇合 |
-| 文档解析 | MinerU 4.x（`mineru-kit`） | PDF → Markdown + 图片 + 结构化 JSON |
-| 向量模型 | BGE-M3 | 稠密 + 稀疏混合向量（1024 维）、中英双语 |
-| 重排模型 | bge-reranker-large | 交叉编码器精排 |
-| 向量库 | Milvus（MilvusClient） | HNSW/SPARSE 索引、hybrid_search、标量过滤 |
-| 对象存储 | MinIO | 原始手册与图片托管，直链回显 |
-| 会话存储 | MongoDB | `chat_message` 会话历史与商品名回填 |
-| 大模型 | OpenAI 兼容接口（DashScope `qwen3.8-flash`） | 商品名抽取、HyDE、答案生成；`LLM_ENABLE_THINKING` 控制思考模式 |
-| 视觉模型 | `qwen3-vl-plus` | 手册插图语义化（`VL_MODEL`） |
-| 联网检索 | 阿里云百炼 MCP | `bailian_web_search` 工具 |
-| 前端 | 原生 HTML + CSS + JS | 无构建依赖，`EventSource` 消费 SSE |
-| 评测 | 自建 50 题分层集 + pytest | 检索消融（Hit/MRR/nDCG）、答案层 A/B、badcase 归因 |
+| 层 | 选型 |
+| --- | --- |
+| 编排 | LangGraph（导入 8 节点 / 查询 7 个实际节点 + 2 个路由与汇合的虚拟节点） |
+| 解析 | MinerU 4.x（版面 + OCR + 公式表格） |
+| 向量 | BGE-M3（稠密 1024 维 + 稀疏词权重） |
+| 精排 | bge-reranker-large |
+| 向量库 | Milvus 2.5（HNSW/AUTOINDEX + SPARSE_INVERTED_INDEX） |
+| 对象存储 | MinIO |
+| 会话存储 | MongoDB 7 |
+| 任务态 | 内存 / Redis 7（可切换） |
+| 服务 | FastAPI + Uvicorn（导入 :8000 / 查询 :8001） |
+| 大模型 | DashScope 兼容接口（默认 `qwen3.8-flash`，关思考） |
+| 可观测 | JSON 结构化日志 + `request_id` + 节点耗时 |
+| 压测 | Locust |
+| 交付 | Docker Compose + GitHub Actions |
 
 ## 目录结构
 
 ```text
 shoper_brain/
 ├── knowledge/
-│   ├── api/
-│   │   ├── import_router.py          # 导入服务入口（:8000）
-│   │   └── query_router.py           # 查询服务入口（:8001）
-│   ├── core/
-│   │   ├── deps.py                   # Service 单例注入
-│   │   └── paths.py                  # temp_data / front 路径常量
-│   ├── front/
-│   │   ├── import.html               # 知识导入台（拖拽上传 + 节点时间线）
-│   │   └── chat.html                 # 问答客服台（流式对话 + 历史 + 配图）
+│   ├── api/                       # 两个 FastAPI 入口 + security.py（鉴权/CORS）
+│   ├── core/                      # Service 单例注入、路径常量
+│   ├── front/                     # 导入台 / 问答台（原生 HTML，自动带 API Key）
 │   ├── processor/
-│   │   ├── import_process/
-│   │   │   ├── main_graph.py         # 导入流程图
-│   │   │   ├── state.py              # ImportGraphState
-│   │   │   ├── config.py             # ImportConfig（环境变量）
-│   │   │   ├── base.py               # BaseNode：日志/计时/异常包装
-│   │   │   ├── exceptions.py         # 分层异常体系
-│   │   │   └── nodes/                # entry / pdf_to_md / md_img / split / item_name / embedding / milvus
-│   │   └── query_process/
-│   │       ├── main_graph.py         # 查询流程图
-│   │       ├── state.py              # QueryGraphState
-│   │       ├── config.py             # QueryConfig（RRF/Rerank/召回参数）
-│   │       ├── base.py               # BaseNode：含 SSE 进度推送
-│   │       └── nodes/                # item_name_confirm / vector / hyde / web_mcp / rrf / rerank / answer
-│   ├── prompt/                       # 导入与查询 Prompt 模板
-│   ├── schema/                       # Pydantic 请求/响应模型
-│   ├── service/                      # 业务层：上传双写、图调度、历史读写
+│   │   ├── import_process/        # 导入图：8 节点 + 状态 + 配置 + 异常体系
+│   │   └── query_process/         # 查询图：主体确认 / 三路召回 / RRF / 精排 / 生成
+│   ├── prompt/                    # 提示词模板（领域示例集中在 import_prompt / query_prompt）
+│   ├── schema/                    # Pydantic 请求响应模型
+│   ├── service/                   # 上传双写、图调度、历史读写
 │   ├── utils/
-│   │   ├── client/                   # AI/存储客户端单例（双检锁 + 延迟初始化）
-│   │   ├── embedding_util.py         # BGE-M3 hybrid 向量生成
-│   │   ├── milvus_util.py            # 混合检索请求与执行
-│   │   ├── markdown_util.py          # 表格线性化
-│   │   ├── mongo_history_util.py     # 会话历史 CRUD
-│   │   ├── sse_util.py               # SSE 队列与事件打包
-│   │   └── task_util.py              # 任务进度、耗时、结果缓存
-│   ├── test/                         # 连通性 / 解析 / 嵌入验证脚本
-│   ├── .env                          # 本地密钥（.gitignore）
+│   │   ├── client/                # AI / 存储客户端单例（双检锁 + 延迟初始化）
+│   │   ├── embedding_util.py      # BGE-M3 混合向量
+│   │   ├── milvus_util.py         # 混合检索请求与执行
+│   │   ├── markdown_util.py       # 表格线性化
+│   │   ├── ranking.py             # 断崖截断 + 主体置信度决策（纯函数）
+│   │   ├── text_normalize.py      # 产品名归一化 + 型号 token 匹配
+│   │   ├── upload_guard.py        # 文件名净化 / 后缀白名单 / 流式限额
+│   │   ├── task_store.py          # 任务态：内存 / Redis 双后端
+│   │   ├── sse_util.py            # SSE 队列 / Redis Pub/Sub
+│   │   └── log_context.py         # request_id / task_id / JSON 日志 / 耗时中间件
 │   └── requirements.txt
-├── eval/                              # 评测层（与线上同一套代码路径）
-│   ├── dataset.jsonl                  # 50 题分层评测集（章节 + 证据句锚点）
-│   ├── link_gold.py                   # 锚点 → chunk_id，解析失败即报错
-│   ├── corpus.py                      # 从干净 Markdown 重切语料（带编码校验）
-│   ├── retrieval.py                   # 稠密/稀疏/加权融合/RRF/精排/断崖截断
-│   ├── metrics.py                     # Hit / Recall / Precision / MRR / nDCG
-│   ├── embedder.py                    # BGE-M3 编码 + 磁盘缓存（hash 兜底冒烟）
-│   ├── hyde.py                        # HyDE 生成（缓存键含模型与思考模式）
-│   ├── configs.py                     # A1~A5 消融配置
-│   ├── run_eval.py                    # 检索消融入口，输出 summary.md/json
-│   ├── answer_ab.py                   # 答案层模型 A/B（同一上下文换模型）
-│   ├── service_eval.py                # 打真实服务的答案评测（人工 0/1）
-│   ├── compare_runs.py                # 多次 run 的指标 diff
-│   ├── make_report.py                 # 从 run 目录生成可提交的报告
-│   ├── REPORT-baseline.md             # 固化的评测报告（本页数字的来源）
-│   ├── badcase.md                     # 已归因的失败案例
-│   ├── model-compare.md               # 换模型实测记录
-│   ├── tests/                         # 23 个单测（指标 / 融合 / 截断）
-│   └── corpus/rs12.jsonl              # 评测语料快照（22 切片）
+├── eval/                          # 评测层（与线上同一条代码路径）
+│   ├── dataset.jsonl              # 旧域 50 题（万用表，保留做回归）
+│   ├── dataset-home.jsonl         # 新域 30 题（家电）
+│   ├── corpus/home.jsonl          # 新域语料快照（72 切片）
+│   ├── corpus/rs12.jsonl          # 旧域语料快照（22 切片）
+│   ├── retrieval.py metrics.py    # 检索组件与指标
+│   ├── run_eval.py                # 消融入口，输出 summary.md/json
+│   ├── link_gold.py               # 证据句 → chunk_id，解析失败即报错
+│   ├── answer_ab.py               # 答案层模型 A/B（固定上下文换模型）
+│   ├── badcase.md                 # 已归因的失败案例（BC-01 ~ BC-11）
+│   └── REPORT-baseline.md         # 固化的评测报告
+├── tests/                         # 114 个单测（纯逻辑，不依赖 torch）
+│   ├── unit/                      # 切分 / 表格 / RRF / 截断 / 决策 / 上传守卫 / 日志
+│   └── conftest.py
 ├── tools/
-│   └── pdf2md_zip.py                 # MinerU PDF→Markdown 独立工具（校验图片断链）
-├── deploy/                           # 虚拟机 Docker 部署
-│   ├── docker-compose.yml            # etcd/minio/milvus/mongo + 两个应用服务（profile）
-│   ├── Dockerfile                    # 应用镜像（CPU torch，MinerU 可选）
-│   ├── .env.example                  # 部署变量（端口/路径/模型/密钥）
-│   ├── verify.py                     # 部署后连通性自检
-│   └── README.md                     # 离线镜像导入与故障排查
-├── .dockerignore
-├── .env.example
+│   ├── make_home_dataset.py       # 生成家电域评测集
+│   ├── experiment_cutoff_hyde.py  # max_k 与 HyDE 权重扫描实验
+│   ├── check_ci_isolated.py       # 屏蔽重依赖，模拟 CI 环境
+│   └── pdf2md_zip.py              # MinerU 独立解析工具（校验图片断链）
+├── deploy/                        # Docker 编排（基础设施 + 应用 profile）
+├── loadtest/                      # Locust 脚本与压测记录
+├── requirements-ci.txt            # CI 专用轻量依赖（不含 torch）
+├── pyproject.toml                 # pytest / coverage / ruff 配置
 └── README.md
 ```
 
@@ -273,155 +228,178 @@ shoper_brain/
 ### 1. 环境要求
 
 - Python **3.12**
-- Milvus **2.4+**（standalone 即可）
-- MinIO（或任意 S3 兼容存储）
-- MongoDB **5.0+**
-- 可访问的大模型服务（DashScope 兼容 OpenAI 协议）
-- 本地 BGE-M3 与 bge-reranker-large 模型权重（CPU / CUDA 均可）
+- 一台能跑 CUDA 的机器（BGE-M3 与精排需要；CPU 可跑但慢）
+- Milvus 2.5、MinIO、MongoDB（本地 Docker 或远程均可）
+- DashScope API Key（LLM 与 VLM）
 
-### 2. 拉取依赖服务（示例）
+### 2. 拉起依赖服务
 
 ```bash
-# Milvus standalone
-docker run -d --name milvus -p 19530:19530 -p 9091:9091 milvusdb/milvus:latest
+# 方式一：用仓库自带的 compose（含 etcd/minio/milvus/mongo/redis）
+cd deploy
+cp .env.example .env      # 填 DASHSCOPE_API_KEY、MODEL_DIR、数据卷目录
+docker compose up -d
+docker compose ps          # 五个容器都应为 healthy
 
-# MinIO
-docker run -d --name minio -p 9000:9000 -p 9001:9001 \
-  -e MINIO_ROOT_USER=minioadmin -e MINIO_ROOT_PASSWORD=minioadmin \
-  minio/minio server /data --console-address ":9001"
-
-# MongoDB
-docker run -d --name mongo -p 27017:27017 mongo:7
+# 方式二：已有 Milvus/MinIO/Mongo，直接在 .env 里填地址
 ```
+
+离线镜像导入、GPU 写法、故障排查见 [`deploy/README.md`](deploy/README.md)。
 
 ### 3. 安装依赖
 
 ```bash
-git clone https://github.com/<your-name>/<repo-name>.git
-cd <repo-name>
-
-python -m venv knowledge/.venv
-# Windows
-knowledge\.venv\Scripts\activate
-# macOS / Linux
-source knowledge/.venv/bin/activate
-
-pip install -r knowledge/requirements.txt
+cd knowledge
+python -m venv .venv
+.venv/Scripts/activate            # Windows；Linux 用 source .venv/bin/activate
+pip install -r requirements.txt
 ```
-
-MinerU 解析依赖 `mineru-kit` 可执行文件。若不在 `PATH` 中，请把 `knowledge/processor/import_process/nodes/pdf_to_md.py` 里的 `args[0]` 改成绝对路径（Windows 下为 `knowledge/.venv/Scripts/mineru-kit.exe`），或直接使用 `tools/pdf2md_zip.py`。
 
 ### 4. 配置环境变量
 
-复制模板并填写：
-
 ```bash
-cp .env.example knowledge/.env
+cp .env.example .env
 ```
 
-`knowledge/.env` 至少需要以下几组：
+最少要改这几项：
 
-```dotenv
-# ---------- 大模型 ----------
-OPENAI_API_BASE=https://dashscope.aliyuncs.com/compatible-mode/v1
-DASHSCOPE_API_KEY=sk-xxxxxxxxxxxxxxxx
-LLM_DEFAULT_MODEL=qwen3.8-flash
-VL_MODEL=qwen3-vl-plus
-ITEM_MODEL=qwen3.8-flash
-
-# ---------- 向量 / 重排 ----------
-BGE_M3_PATH=/models/bge-m3
-BGE_RERANKER_LARGE=/models/bge-reranker-large
-BGE_DEVICE=cuda:0
-BGE_FP16=true
-EMBEDDING_DIM=1024
-
-# ---------- Milvus ----------
-MILVUS_URL=http://127.0.0.1:19530
-CHUNKS_COLLECTION=kb_chunks
-ITEM_NAME_COLLECTION=kb_item_name
-
-# ---------- MinIO ----------
-MINIO_ENDPOINT=127.0.0.1:9000
-MINIO_ACCESS_KEY=minioadmin
-MINIO_SECRET_KEY=minioadmin
-MINIO_BUCKET_NAME=knowledge-base-files
-
-# ---------- MongoDB ----------
-MONGO_URL=mongodb://127.0.0.1:27017
-MONGO_DB_NAME=knowledge
-
-# ---------- MCP 联网搜索 ----------
-MCP_DASHSCOPE_BASE_URL=https://dashscope.aliyuncs.com/api/v1/mcps/web-search/mcp
-```
+| 变量 | 说明 |
+| --- | --- |
+| `DASHSCOPE_API_KEY` | 大模型 Key |
+| `MILVUS_URL` / `MINIO_ENDPOINT` / `MONGO_URL` | 三个存储地址 |
+| `BGE_M3_PATH` / `BGE_RERANKER_LARGE` | 本地权重目录 |
+| `BGE_DEVICE` / `BGE_FP16` | GPU 用 `cuda:0` / `1`，CPU 用 `cpu` / `false` |
+| `API_KEYS` | 留空 = 不鉴权（仅本地）；填了就必须带 `X-API-Key` 或 `?key=` |
+| `CHUNKS_COLLECTION` / `ITEM_NAME_COLLECTION` | 换语料时**务必换名**，避免混库 |
 
 ### 5. 启动服务
 
-在项目根目录（`shoper_brain/`）执行，`-m` 方式保证 `knowledge` 包可被导入：
-
 ```bash
-# 终端 1：导入服务（上传 / 解析 / 入库）
-python -m knowledge.api.import_router     # http://127.0.0.1:8000
+# 导入服务（:8000）
+python -m knowledge.api.import_router
 
-# 终端 2：查询服务（问答 / 流式 / 历史）
-python -m knowledge.api.query_router      # http://127.0.0.1:8001
+# 问答服务（:8001）
+python -m knowledge.api.query_router
 ```
 
 ### 6. 使用
 
-| 页面 | 地址 | 用途 |
-| --- | --- | --- |
-| 知识导入台 | <http://127.0.0.1:8000/import> | 拖拽上传 PDF/Markdown，实时查看 7 个节点进度与耗时 |
-| 问答客服台 | <http://127.0.0.1:8001/chat> | 连续对话、勾选流式输出、清空会话、查看配图 |
+| 页面 | 地址 |
+| --- | --- |
+| 知识导入台 | `http://127.0.0.1:8000/import`（配了 API Key 时加 `?key=你的Key`） |
+| 问答客服台 | `http://127.0.0.1:8001/chat?key=你的Key` |
 
-### 7. 跑评测（可选，但建议）
+上传一份说明书 → 看 8 个节点的时间线 → 到问答页提问，答案带 `[n]` 角标与配图。
+
+### 7. 跑评测
 
 ```bash
-# 单测：指标 / 融合 / 断崖截断
-python -m pytest eval/tests -q
+# 单测（不需要 GPU）
+python -m pytest tests eval/tests -q
 
-# 校验标注：把「章节 + 证据句」解析成当前语料下的 chunk_id
-python -m eval.link_gold
+# 校验标注：证据句 → chunk_id，解析失败会点名哪道题
+python -m eval.link_gold --dataset eval/dataset-home.jsonl \
+  --corpus eval/corpus/home.jsonl --corpus-source milvus
 
-# 5 组检索消融（需要 GPU + BGE 权重 + DASHSCOPE_API_KEY）
-python -m eval.run_eval --run-id baseline
+# 5 组检索消融（需要 GPU + 权重 + Key）
+python -m eval.run_eval --dataset eval/dataset-home.jsonl \
+  --corpus eval/corpus/home.jsonl --run-id home-v2 \
+  --configs A1_dense,A2_hybrid,A3_hyde_rrf,A4_rerank,A5_cutoff
 
-# 没有模型权重时只验证链路（数字无意义）
+# 没有权重时只验证链路（数字无意义）
 python -m eval.run_eval --embedder hash --hyde none --limit 5 --configs A1_dense,A2_hybrid
 ```
 
-结果写到 `eval/results/<run_id>/`，其中 `summary.md` 可直接贴进文档。
-指标口径与标注协议见 [`eval/README.md`](eval/README.md)。
+结果写到 `eval/results/<run_id>/`，`summary.md` 可直接贴文档。
 
-### 8. 第二组语料：家电说明书（换域验证）
-
-同一套代码不改业务逻辑，只替换提示词示例与语料，就能迁到家电域——用来验证
-「架构是否真的领域无关」。当前语料（`kb_chunks_home_v1` / `kb_item_names_home_v1`）：
-
-| 文档 | 页数 | 型号 | 切片 |
-| --- | --- | --- | --- |
-| 美的 变频分体落地式空调器 使用安装说明书 | 40 | `KFR-51LW/N8KS1-1P` / `KFR-72LW/N8KS1-1P` | 50 |
-| 小米 米家智能摄像机 云台版 使用说明书 | 16 | 米家智能摄像机 云台版 | 22 |
-
-评测集 `eval/dataset-home.jsonl`（30 题：事实 8 / 表格 7 / 步骤 7 / 多轮 5 / 域外 3），
-语料 `eval/corpus/home.jsonl`（72 切片，fingerprint `home-v2`）：
+### 8. 可观测性与压测
 
 ```bash
-python -m eval.link_gold --dataset eval/dataset-home.jsonl --corpus eval/corpus/home.jsonl --corpus-source milvus
-python -m eval.run_eval --dataset eval/dataset-home.jsonl --corpus eval/corpus/home.jsonl \
-  --run-id home-v2 --configs A1_dense,A2_hybrid,A3_hyde_rrf,A4_rerank,A5_cutoff
+# 结构化日志：每条带 request_id / task_id，节点打 node_end + duration_ms
+docker compose logs -f query-app | jq 'select(.task_id=="a1b2c3d4")'
+
+# 压测
+pip install locust
+locust -f loadtest/locustfile.py --headless -u 5 -r 1 -t 2m --csv=lt-5 --host http://127.0.0.1:8001
 ```
 
-| 配置 | Hit@5 | Recall@5 | MRR@5 | nDCG@5 | 平均文档数 | 平均上下文字数 |
+实测（RTX 3060 / qwen3.8-flash 关思考 / 单进程 uvicorn / 旧域 22 切片语料）：
+
+| 并发 | 请求数/时长 | P50 | P95 | 错误率 | 吞吐 |
+| --- | --- | --- | --- | --- | --- |
+| 5 | 10 / 60s | 11.0 s | 12.0 s | 0% | 0.17 QPS |
+| 8 | 12 / 45s | 11.0 s | 11.0 s | 0% | 0.27 QPS |
+| 10 | 20 / 60s | 12.0 s | 12.0 s | 0% | 0.33 QPS |
+
+5→10 并发 P95 不变、吞吐翻倍，说明请求是并行的；**瓶颈在单卡串行推理**
+（BGE-M3 与精排共用一把进程内锁）。要提吞吐只能模型服务化 / 批推理 / 语义缓存。
+
+## 语料与评测
+
+### 两套语料
+
+| 语料 | 文档 | 页数 | 切片 | 题目 | 用途 |
+| --- | --- | --- | --- | --- | --- |
+| 家电（主） | 美的变频空调 + 米家摄像机 | 40 + 16 | **72** | 30 | 主评测 |
+| 万用表（旧） | RS-12 数字万用表 | 6 | 22 | 50 | 换域回归对照 |
+
+### 评测集构成（新域 30 题）
+
+| 题型 | 数量 | 例子 |
+| --- | --- | --- |
+| `fact` | 8 | 「51 机的建议制冷面积是多少？」 |
+| `table` | 7 | 「51 机的 HSPF 值是多少？」 |
+| `procedure` | 7 | 「怎么清洁空调滤尘网？」 |
+| `multi_turn` | 5 | 「那 72 机的制冷面积呢？」（带历史） |
+| `out_of_scope` | 3 | 「这台空调的整机保修期是几年？」（手册没有，应弃答） |
+
+标注协议：每题写「章节 + 逐字证据句」，不绑 `chunk_id`。
+`python -m eval.link_gold` 会把证据句映射到当前语料，**解析不到直接报错**——
+等于用机器反查"这道题到底能不能从手册里找到答案"。当前 **30/30** 解析通过。
+
+### 指标定义
+
+| 指标 | 含义 |
+| --- | --- |
+| Hit@k | 前 k 条里有没有命中 gold |
+| Recall@k | gold 被召回的比例（多 gold 时更敏感） |
+| Precision@k | 前 k 条里有效片段占比 |
+| MRR@k | 第一个正确片段的倒数名次 |
+| nDCG@k | 排序质量（考虑名次与多 gold） |
+| 平均文档数 / 平均上下文字数 | 成本代理指标 |
+| P95 检索耗时 | 首 token 之外的检索段延迟 |
+
+### 消融结果（新域，30 题 / 72 切片）
+
+| 配置 | Hit@5 | Recall@5 | MRR@5 | nDCG@5 | 文档数 | 上下文字数 |
 | --- | --- | --- | --- | --- | --- | --- |
-| A1_dense | 0.852 | 0.815 | 0.711 | 0.723 | 10.0 | 7702 |
-| A2_hybrid | 0.852 | 0.815 | 0.738 | 0.738 | 10.0 | 7556 |
-| A3_hyde_rrf | 0.852 | 0.815 | 0.753 | 0.747 | 10.0 | 7573 |
-| A4_rerank | **0.889** | **0.852** | **0.840** | **0.816** | 10.0 | 7573 |
-| A5_cutoff | **0.889** | **0.852** | **0.840** | **0.816** | 7.4 | 5692 |
+| A1 纯稠密 | 0.852 | 0.815 | 0.711 | 0.723 | 10.0 | 7702 |
+| A2 +稀疏（混合） | 0.852 | 0.815 | 0.738 | 0.738 | 10.0 | 7556 |
+| A3 +HyDE & RRF | 0.852 | 0.815 | 0.753 | 0.747 | 10.0 | 7573 |
+| A4 +精排 | **0.889** | **0.852** | **0.840** | **0.816** | 10.0 | 7573 |
+| A5 +断崖截断 | **0.889** | **0.852** | **0.840** | **0.816** | **7.4** | **5692** |
 
+### 消融结果（旧域，50 题 / 22 切片）
 
-#### 调参实验：max_k 与 HyDE 权重对 Hit@5 无效
+| 配置 | Hit@5 | MRR@5 | nDCG@5 | 文档数 | 上下文字数 |
+| --- | --- | --- | --- | --- | --- |
+| A1 纯稠密 | 0.875 | 0.758 | 0.788 | 10.0 | 3803 |
+| A2 +稀疏 | 0.900 | 0.756 | 0.792 | 10.0 | 3755 |
+| A3 +HyDE & RRF | 0.875 | 0.728 | 0.764 | 10.0 | 3830 |
+| A4 +精排 | **0.950** | **0.885** | **0.902** | 10.0 | 3830 |
+| A5 +断崖截断 | **0.950** | **0.885** | **0.902** | **8.2** | **3163** |
+
+### 四条结论
+
+1. **精排是唯一"确定赚"的组件**：新域 MRR 0.753→0.840、旧域 0.756→0.885，是单步增益最大的一环。
+2. **断崖截断只省钱不影响质量**：新域上下文 7573→5692 字（-25%）、旧域 3830→3163 字（-17%），
+   Hit/Recall/MRR/nDCG 一格没变。
+3. **HyDE 在旧域是负收益**（0.900→0.875），在新域零收益——短问题 + 强型号场景下，
+   假想文档会把不存在的数值灌进检索空间。生产默认关闭，只留开关。
+4. **换域后绝对指标下降可归因**：0.950→0.889，根因是切分层（40 页手册里一个章节占 46% 的切片）
+   与文档跨章重复（同一证据句出现两次导致假失败），不是换域动作本身引入。
+
+### 调参实验：max_k 与 HyDE 权重都提不动 Hit@5
 
 `tools/experiment_cutoff_hyde.py` 扫描两个旋钮（27 道计分题）：
 
@@ -432,134 +410,69 @@ python -m eval.run_eval --dataset eval/dataset-home.jsonl --corpus eval/corpus/h
 | 召回深度 | 10 / 20 / 30 | 0.889（全同） | 7.1 → 7.3 | 5740 → 6241 |
 
 原因：截断只砍尾部、不改前五顺序；HyDE 换的是候选顺序，而精排会用 cross-encoder 彻底重排。
-三个未命中题的 gold **都在前十之外**，所以加大 `max_k` 救不了；加深召回只把 Recall@5
+三个未命中题的 gold **都在前十之外**，所以加大 `max_k` 也捞不到；加深召回只把 Recall@5
 从 0.833 抬到 0.852。**要提高 Hit@5 得动切分与标注，不是这几个旋钮。**
 
-三点结论：
+### 方差提醒
 
-1. **换域后排序不变**：精排依旧带来最大增益（MRR 0.753→0.840），断崖截断在不掉指标的前提下
-   把平均上下文从 7573 字压到 5692 字（-25%）。
-2. **绝对指标低于万用表集（0.889 vs 0.950）**，原因经核查不是页眉（该手册页顶 15% 区域
-   无跨页重复文本），而是两条：① 两个超长章节没有二级标题，50 个切片里 62% 挂在重复标题下
-   （`# 安装说明 INSTALLATION` 一个标题占 23 片），标题维度丧失区分度；② 文档本身跨章重复
-   叙述（同一证据句在语料里出现 2 次），gold 只标一片时会误判为未命中。属切分与标注层问题。
-3. **单文档 vs 双文档语料指标一致**（0.889），说明多产品库里 `item_name` 过滤没有引入额外噪声；
-   跨产品提问会走"请确认产品"分支，型号提问走精确匹配短路。
+30 题基数下**一题 = 3.7 个百分点**，50 题下是 2 个百分点。所以：
 
-### 9. 容器化部署（虚拟机 Docker）
-
-基础设施（Milvus / MinIO / MongoDB / etcd）与两个应用服务都提供了 compose：
-
-```bash
-cd deploy
-cp .env.example .env       # 填 DASHSCOPE_API_KEY、MODEL_DIR、数据卷目录
-docker compose up -d                       # 只起基础设施
-docker compose --profile app up -d --build # 基础设施 + 导入/问答服务
-docker compose --profile tools up -d       # 可选：Attu 图形界面
-python3 verify.py --host 127.0.0.1         # 端口与健康自检
-```
-
-镜像全部可离线导入（`docker load`），容器间用服务名互访，两个应用服务带 healthcheck
-与 `depends_on: condition: service_healthy`。离线 tar 导入、模型目录挂载、GPU 版写法、
-常见故障排查见 [`deploy/README.md`](deploy/README.md)。
-
-
-### 10. 可观测性与压测
-
-**结构化日志**：服务默认输出 JSON（`LOG_FORMAT=json`，本地调试可设 `text`），
-每条日志都带 `request_id` / `task_id`，节点完成时额外带 `node` 与 `duration_ms`：
-
-```bash
-docker compose logs -f query-app | jq 'select(.task_id=="a1b2c3d4")'
-docker compose logs query-app | jq -r 'select(.msg=="node_end") | "\(.node)\t\(.duration_ms)"'
-```
-
-每个 HTTP 响应都带 `x-request-id` 头，可直接拿它去日志里搜整条链路。
-
-**压测**：`loadtest/locustfile.py` 覆盖问答与状态轮询两条链路。
-
-```bash
-pip install locust
-locust -f loadtest/locustfile.py --headless -u 5  -r 1 -t 2m --csv=lt-5  --host http://127.0.0.1:8001
-locust -f loadtest/locustfile.py --headless -u 20 -r 5 -t 2m --csv=lt-20 --host http://127.0.0.1:8001
-```
-
-实测（RTX 3060、qwen3.8-flash 关思考、单进程 uvicorn、22 切片知识库）：
-
-| 并发 | 请求数/时长 | P50 | P95 | 错误率 |
-| --- | --- | --- | --- | --- |
-| 5 | 10 / 60s | 11.0s | 12.0s | 0% |
-| 8 | 12 / 45s | 11.0s | 11.0s | 0% |
-| 10 | 20 / 60s | 12.0s | 12.0s | 0% |
-
-结论：5→10 并发 P95 基本不变、吞吐翻倍，说明请求是并行的；**瓶颈在单卡串行推理**
-（BGE-M3 与精排共用一把进程内锁），单题 11s ≈ 检索 2s + 生成 3~5s + 精排与编码。
-提吞吐要走模型服务化 / 批推理 / 语义缓存，而不是加 worker。详见
-[`loadtest/README.md`](loadtest/README.md)。
-
-两个前提：压测前先手动问一次做**模型预热**（否则首批请求会污染 P95）；
-CPU 部署下把 `-u` 从 5 起步，虚拟机内存不足时先降并发。
+- 单题级差异不解读（同一配置不同 run 会翻转 1 题）；
+- 只讲多次运行稳定复现的差异：精排 +、截断降本、HyDE 负收益，这三条在多次 run 里都成立。
 
 ## 接口文档
 
-启动后可直接访问 `/docs`（FastAPI 自带 Swagger）。
+启动后访问 `/docs` 看 Swagger。配了 `API_KEYS` 时，除页面外的接口都需要
+`X-API-Key: <key>` 头（或 `?key=<key>`，供 SSE 的 `EventSource` 使用）。
 
 ### 导入服务 `:8000`
 
-| 方法 | 路径 | 说明 | 主要参数 |
+| 方法 | 路径 | 说明 | 鉴权 |
 | --- | --- | --- | --- |
-| GET | `/import` | 返回导入页面 | — |
-| POST | `/upload` | 上传手册并异步入库 | `multipart/form-data: file` |
-| GET | `/status/{task_id}` | 查询任务进度 | 返回 `status` / `done_list` / `running_list` / `durations` |
+| GET | `/import` | 导入页面 | 否 |
+| POST | `/upload` | 上传说明书并异步入库 | 是 |
+| GET | `/status/{task_id}` | 任务进度（状态 / 已完成 / 进行中 / 各节点耗时） | 是 |
 
 ```bash
-# 上传
 curl -X POST http://127.0.0.1:8000/upload \
-  -F "file=@./万用表RS-12的使用.pdf"
+  -H "X-API-Key: dev-key-1" \
+  -F "file=@./美的空调.pdf"
+# => {"task_id":"9c5ae9ff","message":"文件上传成功,请等待导入流程完成"}
 
-# => {"task_id":"9a5b6f81","message":"文件上传成功,请等待导入流程完成"}
-
-# 轮询进度
-curl http://127.0.0.1:8000/status/9a5b6f81
+curl -H "X-API-Key: dev-key-1" http://127.0.0.1:8000/status/9c5ae9ff
 ```
 
 ### 查询服务 `:8001`
 
-| 方法 | 路径 | 说明 | 主要参数 |
+| 方法 | 路径 | 说明 | 鉴权 |
 | --- | --- | --- | --- |
-| GET | `/chat` | 返回问答页面 | — |
-| POST | `/query` | 提交问题（流式 / 非流式） | `query`、`session_id`、`is_stream` |
-| GET | `/stream/{task_id}` | SSE 事件流 | `event: progress｜delta｜final` |
-| GET | `/history/{session_id}` | 拉取历史会话 | `limit` 默认 50 |
-| DELETE | `/history/{session_id}` | 清空会话 | 返回 `deleted_count` |
+| GET | `/chat` | 问答页面 | 否 |
+| POST | `/query` | 提交问题（流式 / 非流式） | 是 |
+| GET | `/stream/{task_id}` | SSE 事件流 | 是 |
+| GET | `/history/{session_id}` | 拉取会话历史（默认 50 条） | 是 |
+| DELETE | `/history/{session_id}` | 清空会话 | 是 |
 
 ```bash
 # 非流式
 curl -X POST http://127.0.0.1:8001/query \
-  -H "Content-Type: application/json" \
-  -d '{"query":"RS-12 万用表怎么测直流电压？","session_id":"sess-demo","is_stream":false}'
+  -H "X-API-Key: dev-key-1" -H "Content-Type: application/json" \
+  -d '{"query":"这款空调的适用面积是多少？","session_id":"demo","is_stream":false}'
 
-# => {"message":"查询成功","session_id":"sess-demo","answer":"...","task_id":"..."}
-
-# 流式：先提交拿 task_id，再订阅 SSE
-curl -X POST http://127.0.0.1:8001/query \
-  -H "Content-Type: application/json" \
-  -d '{"query":"它怎么测电阻？","session_id":"sess-demo","is_stream":true}'
-
-curl -N http://127.0.0.1:8001/stream/<task_id>
+# 流式：先拿 task_id，再订阅 SSE
+curl -N "http://127.0.0.1:8001/stream/<task_id>?key=dev-key-1"
 ```
 
-SSE 事件格式：
+SSE 事件：
 
 ```text
 event: progress
-data: {"status": "processing", "done_list": ["welcome"], "running_list": ["search_embedding"]}
+data: {"status":"processing","done_list":["确认问题产品"],"running_list":["切片搜索"]}
 
 event: delta
-data: {"delta": "将功能转盘置于"}
+data: {"delta":"将功能转盘置于"}
 
 event: final
-data: {"answer": "……完整答案……"}
+data: {"answer":"……完整答案……","image_urls":["http://.../page_19_image_8.jpg"]}
 ```
 
 ## 数据模型
@@ -568,18 +481,19 @@ data: {"answer": "……完整答案……"}
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `chunk_id` | INT64（主键，auto_id） | 切片唯一 ID，插入后回填 |
-| `dense_vector` | FLOAT_VECTOR(dim=1024) | BGE-M3 稠密向量，索引 `AUTOINDEX` / `COSINE` |
-| `sparse_vector` | SPARSE_FLOAT_VECTOR | BGE-M3 稀疏向量，索引 `SPARSE_INVERTED_INDEX` / `IP` |
-| `content` | VARCHAR(65535) | 切片正文（含 Markdown 图片链接） |
-| `title` | VARCHAR(65535) | 当前章节标题 |
-| `parent_title` | VARCHAR(65535) | 上级章节标题 |
-| `file_title` | VARCHAR(65535) | 所属手册文件名 |
-| `item_name` | VARCHAR(65535) | 商品/设备名称，检索时作为过滤条件 |
+| `chunk_id` | INT64（主键，auto_id） | 切片唯一 ID |
+| `dense_vector` | FLOAT_VECTOR(1024) | BGE-M3 稠密向量，`AUTOINDEX` / `COSINE` |
+| `sparse_vector` | SPARSE_FLOAT_VECTOR | BGE-M3 稀疏权重，`SPARSE_INVERTED_INDEX` / `IP` |
+| `content` | VARCHAR(65535) | 切片正文（含图片 URL） |
+| `title` | VARCHAR(65535) | 章节标题 |
+| `parent_title` | VARCHAR(65535) | 上级标题 |
+| `file_title` | VARCHAR(65535) | 来源文档 |
+| `item_name` | VARCHAR(65535) | 产品名，检索时作为过滤条件 |
 
-### Milvus：商品名集合（`ITEM_NAME_COLLECTION`）
+### Milvus：主体集合（`ITEM_NAME_COLLECTION`）
 
-存放 `item_name` 的稠密 + 稀疏向量，用于查询时的实体对齐与候选打分。
+`pk / file_title / item_name / dense_vector / sparse_vector`，
+用于"用户说的型号 → 知识库里哪份手册"。
 
 ### MongoDB：`chat_message`
 
@@ -589,213 +503,114 @@ data: {"answer": "……完整答案……"}
 | `role` | string | `user` / `assistant` |
 | `text` | string | 消息正文 |
 | `rewritten_query` | string | 指代消解后的问题 |
-| `item_names` | array | 该消息关联的商品名 |
+| `item_names` | array | 关联产品名 |
 | `ts` | float | 时间戳 |
 
 ## 关键配置项
 
 导入侧（`knowledge/processor/import_process/config.py`）：
 
-| 变量 / 属性 | 默认值 | 说明 |
+| 变量 | 默认值 | 说明 |
 | --- | --- | --- |
-| `max_content_length` | 1000 | 切片最大长度，超出则二次切分 |
-| `min_content_length` | 500 | 切片最小长度，不足则与相邻切片合并 |
+| `max_content_length` | 1000 | 切片上限，超出二次切分 |
+| `min_content_length` | 500 | 切片下限，不足与相邻合并 |
 | `img_content_length` | 200 | 图片上下文抓取字数 |
-| `item_name_chunk_k` | 3 | 商品名识别使用的切片数 |
+| `item_name_chunk_k` | 3 | 主体识别使用前几片 |
 | `embedding_batch_size` | 8 | 批量嵌入大小 |
-| `requests_per_minute` | 20 | VLM 图片摘要速率限制 |
+| `requests_per_minute` | 20 | VLM 图注限速 |
 
 查询侧（`knowledge/processor/query_process/config.py`）：
 
-| 环境变量 | 默认值 | 说明 |
+| 变量 | 默认值 | 说明 |
 | --- | --- | --- |
-| `MAX_CONTEXT_CHARS` | 12000 | 拼装给 LLM 的上下文预算 |
-| `RRF_K` | 60 | RRF 平滑常数 |
-| `RRF_MAX_RESULTS` | 10 | 融合后保留数量 |
-| `RERANK_MAX_TOP_K` / `RERANK_MIN_TOP_K` | 10 / 3 | 断崖截断上下界 |
-| `RERANK_GAP_ABS` | 0.15 | 相邻分数断崖阈值 |
-| `EMBEDDING_SEARCH_LIMIT` | 10 | 向量检索召回条数（已接入 `vector_search`，此前只定义未使用） |
-| `HYDE_SEARCH_LIMIT` | 5 | HyDE 检索召回条数（同上） |
-| `RETRIEVAL_MODE` | `hybrid` | `hybrid` / `dense` / `sparse`，消融实验用 |
-| `EMBEDDING_DENSE_WEIGHT` / `EMBEDDING_SPARSE_WEIGHT` | 0.5 / 0.5 | 混合检索两路权重（此前硬编码） |
-| `ITEM_NAME_HIGH_CONFIDENCE` / `MID_CONFIDENCE` | 0.7 / 0.6 | 商品名确认置信度阈值 |
-| `ITEM_NAME_GAP_ABS` | 0.15 | 多候选时与最高分的差值下限，低于此值的候选视为噪声 |
-| `ITEM_NAME_MAX_OPTIONS` | 5 | 反问时最多列出的候选商品数 |
+| `MAX_CONTEXT_CHARS` | 12000 | 上下文预算 |
+| `RRF_K` / `RRF_MAX_RESULTS` | 60 / 10 | RRF 平滑常数与保留数 |
+| `RERANK_MAX_TOP_K` / `MIN_TOP_K` / `GAP_ABS` | 10 / 3 / 0.15 | 断崖截断三参数 |
+| `EMBEDDING_SEARCH_LIMIT` / `HYDE_SEARCH_LIMIT` | 10 / 5 | 两路召回深度 |
+| `RETRIEVAL_MODE` | `hybrid` | `hybrid` / `dense` / `sparse` |
+| `EMBEDDING_DENSE_WEIGHT` / `SPARSE_WEIGHT` | 0.5 / 0.5 | 混合检索权重 |
+| `ITEM_NAME_HIGH_CONFIDENCE` / `MID_CONFIDENCE` | 0.7 / 0.6 | 主体确认阈值 |
+| `ITEM_NAME_GAP_ABS` / `MAX_OPTIONS` | 0.15 / 5 | 候选过滤与反问上限 |
 
-接口安全（`knowledge/api/security.py` + `knowledge/utils/upload_guard.py`）：
+安全与上传（`knowledge/api/security.py` + `knowledge/utils/upload_guard.py`）：
 
-| 环境变量 | 默认值 | 说明 |
+| 变量 | 默认值 | 说明 |
 | --- | --- | --- |
-| `API_KEYS` | 空 | 逗号分隔的 Key 列表；空 = 不鉴权（仅本地）。可传 `X-API-Key` 头或 `?key=` |
-| `ALLOWED_ORIGINS` | 本机 8000/8001 | CORS 白名单，替代原来的 `*` |
-| `MAX_UPLOAD_MB` | 50 | 上传大小上限，流式校验，超限删除半成品 |
+| `API_KEYS` | 空 | 逗号分隔；空 = 不鉴权（仅本地） |
+| `ALLOWED_ORIGINS` | 本机 8000/8001 | CORS 白名单 |
+| `MAX_UPLOAD_MB` | 50 | 上传上限，流式校验 |
 | `ALLOWED_UPLOAD_SUFFIXES` | `.pdf,.md,.markdown` | 后缀白名单 |
 
-大模型侧（`knowledge/utils/client/ai_clients.py`）：
+模型侧（`knowledge/utils/client/ai_clients.py`）：
 
-| 环境变量 | 默认值 | 说明 |
+| 变量 | 默认值 | 说明 |
 | --- | --- | --- |
-| `LLM_DEFAULT_MODEL` | `qwen3.8-flash` | 商品名抽取 / HyDE / 答案生成 |
-| `LLM_ENABLE_THINKING` | `false` | qwen3 系列默认开思考，单次 20s+；留空表示不下发该参数 |
-| `ITEM_MODEL` | `qwen3.8-flash` | 导入侧商品名识别 |
-| `VL_MODEL` | `qwen3-vl-plus` | 图片摘要 |
+| `LLM_DEFAULT_MODEL` | `qwen3.8-flash` | 主体抽取 / HyDE / 答案生成 |
+| `LLM_ENABLE_THINKING` | `false` | qwen3 系列默认开思考（单次 20s+），必须关 |
+| `ITEM_MODEL` / `VL_MODEL` | `qwen3.8-flash` / `qwen3-vl-plus` | 主体识别 / 图注 |
 
-## 评测
+任务态：
 
-> 代码在 `eval/`，一条命令复现：`python -m eval.run_eval --run-id baseline`。
-> 评测集不是"感觉能答对"，而是 50 道带 gold 切片的分层题目，逐条可追溯。
-> 完整证据（可复现信息 / 消融 / 分题型 / 未命中清单）：[`eval/REPORT-baseline.md`](eval/REPORT-baseline.md)，
-> 由 `python -m eval.make_report` 从 `summary.json` 生成，不是手抄。
+| 变量 | 默认值 | 说明 |
+| --- | --- | --- |
+| `TASK_BACKEND` | `memory` | `memory` / `redis` |
+| `REDIS_URL` | `redis://127.0.0.1:6379/0` | Redis 地址 |
+| `TASK_TTL_SECONDS` | 86400 | 任务状态保留时长 |
 
-### 评测集（50 题 / 6 类）
+## 工程化能力
 
-| 题型 | 数量 | 测什么 | 有 gold |
-| --- | --- | --- | --- |
-| `fact` | 12 | 单跳事实（位数、重量、频宽、阈值） | ✅ |
-| `table` | 10 | 规格表数值（分辨率、精确度、量程） | ✅ |
-| `procedure` | 10 | 多步骤操作（档位、端口、顺序） | ✅ |
-| `multi_turn` | 8 | 指代消解（"它/那/呢"） | ✅ |
-| `out_of_scope` | 6 | 手册外（蓝牙、电容、价格、校准） | ❌ 应弃答 |
-| `negative` | 4 | 领域内但手册没写（保修、螺丝数量） | ❌ 应弃答 |
+| 能力 | 实现 | 关键点 |
+| --- | --- | --- |
+| 鉴权 | `API_KEYS` 依赖 | 头或查询参数；`hmac.compare_digest` 防时序侧信道 |
+| 上传安全 | `upload_guard` | 修掉 `os.path.join(dir, filename)` 的路径穿越；流式限额不信 `Content-Length` |
+| 任务态 | `TaskStore` 协议 | 内存 / Redis 双实现，24h TTL，连不上自动降级 |
+| 流式 | SSE + Redis Pub/Sub | 推流与消费可跨进程，支持多 worker |
+| 日志 | `log_context` | JSON、`request_id`/`task_id`、`node_end + duration_ms`、纯 ASGI 中间件 |
+| 部署 | `deploy/docker-compose.yml` | 五容器 + 两个应用服务，全 healthcheck，依赖 `service_healthy` |
+| CI | `.github/workflows/ci.yml` | ruff + pytest + 标注校验，22~40s |
+| 压测 | `loadtest/locustfile.py` | 问答与状态轮询两类用户；404 探活属预期 |
 
-标注不写 chunk_id，而是写「章节 + 原文证据句」，由 `eval/link_gold.py` 解析成当前语料下的
-chunk_id；**解析不到直接报错退出**，等于用机器反查"这道题到底能不能从手册里找到答案"。
+测试：**114 个用例、覆盖率 46%**。核心纯逻辑模块 88~94%（切分、表格线性化、上传守卫、产品名归一化）。
+`tools/check_ci_isolated.py` 用 import 钩子把 torch/pymilvus 变"不存在"，本地即可复现 CI 依赖环境。
 
-### 检索消融（22 切片，BGE-M3 + bge-reranker-large，单卡 3060）
+## 已知限制
 
-默认配置：`qwen3.8-flash` + `LLM_ENABLE_THINKING=false`；每次只加一个变量。
+1. **超长章节缺二级标题**：40 页手册里 `# 安装说明` 一个标题占 46% 的切片，标题维度失去区分度，
+   稀疏检索被同质词带偏。这是新域 Hit@5 低于旧域的主因。
+2. **文档跨章重复**：同一事实在"快速指引"与"详细说明"各写一次，gold 只标一片会产生假失败。
+3. **无页码溯源**：解析产物 `structured_content.json` 里有 `page_idx`，但尚未写入 Milvus 标量字段，
+   答案暂时给不出"第 X 页"。
+4. **单租户**：没有按部门/密级过滤，多租户需扩展为 `tenant_id` 标量过滤 + JWT 角色。
+5. **无语义缓存**：相同/相似问题重复走完整链路，成本与延迟都有压缩空间。
+6. **单卡串行推理**：5 并发 P95 约 12s、吞吐 0.33 QPS，瓶颈是 GPU 上的模型串行化。
+7. **应用容器未在低配 VM 落地**：镜像 5~6G，实测机磁盘仅剩 3.5G，当前是"容器跑基础设施、应用跑宿主机"。
 
-| 配置 | Hit@5 | Recall@5 | MRR@5 | nDCG@5 | 平均文档数 | 平均上下文字数 | P95 检索耗时 | HyDE 额外 LLM |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| A1 稠密 | 0.875 | 0.875 | 0.758 | 0.788 | 10.0 | 3803 | 0.2 ms | — |
-| A2 +稀疏（混合） | 0.900 | 0.900 | 0.756 | 0.792 | 10.0 | 3755 | 0.2 ms | — |
-| A3 +HyDE & RRF | 0.875 | 0.875 | 0.728 | 0.764 | 10.0 | 3830 | 579 ms | **+5236 ms/题** |
-| A4 +精排 | **0.950** | **0.950** | **0.885** | **0.902** | 10.0 | 3830 | 76.6 ms | 缓存命中 |
-| A5 +断崖截断 | **0.950** | **0.950** | **0.885** | **0.902** | **8.2** | **3163** | 0.7 ms | 缓存命中 |
+## 路线图
 
-分题型（A4）：`table` 1.000、`procedure` 1.000、`fact` 0.917、`multi_turn` 0.875。
-`out_of_scope` / `negative` 无 gold，检索指标不适用，只在答案层统计弃答率。
-
-### 四条结论
-
-1. **稀疏召回只值 2.5 个点**：Hit@5 0.875 → 0.900，MRR 几乎不动（0.758 → 0.756）。
-   本场景 query 短、型号词少，稠密向量已经吃下了大部分语义；稀疏主要在"型号/量程"这类
-   精确串上兜底，属于保险而非主力。
-2. **HyDE + RRF 三次 run 都没赢过纯混合检索**：Hit@5 0.850 ~ 0.875（A2 是 0.900），
-   MRR 0.714 ~ 0.729（A2 是 0.756），且每题多一次 3 ~ 5 秒的 LLM 调用（开思考时 22 秒）。
-   原因是手册答案是"参数、步骤、阈值"这类事实型内容，而 HyDE 生成的是"看似专业的说明文"，
-   会把不存在的数值灌进检索空间；RRF 只看名次不看分数量级，等于给这份编造文档同样的投票权。
-   **结论：生产默认值应关掉 HyDE，只保留开关。**
-3. **精排是唯一"确定赚"的组件**：+5 个点 Hit@5、+0.127 MRR、+0.110 nDCG，代价 76 ms
-   GPU 耗时。这也是"先精排、再谈别的"这个优化顺序的依据。
-4. **断崖截断省 17% 上下文且不掉点**：平均文档 10.0 → 8.2、上下文字数 3830 → 3163，
-   四项指标完全不变。按 token 计费，等于每轮问答直接省下近六分之一成本。
-
-### 单次 run 的方差（解读前必读）
-
-同一模型、`temperature=0`、同一份缓存，重跑仍会翻转约 1 道题 —— 50 题基数下就是 **±2.5 个百分点**。
-所以：
-
-- 单题级差异**不解读**（A3 在不同 run 里 0.850 / 0.875 都出现过，属于噪声）；
-- 要看的是"同一结论是否在多次 run 里稳定复现"：HyDE 不敌 A2、精排稳定 +5 点，这两条在三次 run 里都成立；
-- 想把误差压到 1 个点以内，评测集至少要扩到 150 题以上（需要第二、三本手册）。
-
-### 换模型实测（qwen-flash → qwen3.8-flash）
-
-用同一套 50 题、同一语料，把 LLM 换成 `qwen3.8-flash` 重跑（详细对照见 `eval/model-compare.md`）：
-
-| 指标 | qwen-flash | qwen3.8-flash（默认思考） | qwen3.8-flash（关思考） |
-| --- | --- | --- | --- |
-| A1/A2/A4/A5 检索指标 | 完全一致 | 完全一致 | 完全一致 |
-| A3 Hit@5 / MRR@5 | 0.850 / 0.725 | 0.850 / 0.729 | 0.875 / 0.728 |
-| HyDE 冷启动 p50 / p95 | 2.9 s / 3.7 s | **16.0 s / 47.6 s** | 5.2 s / 6.6 s |
-| 答案层 8 题平均延迟 | 1.7 s | 10.0 s | 2.8 s |
-| 该弃答的 2 题答对 | 1 / 2 | 2 / 2 | 2 / 2 |
-
-三点结论：
-
-1. **检索指标不动**——A1/A2/A4/A5 逐位相同，说明瓶颈在切分与融合，不在 LLM 选型；
-   A3 的 ±0.025 是单题翻转（50 题里 1 题 = 2.5 个点），不构成模型优劣证据。
-2. **思考模式必须关**：默认思考下 HyDE p95 47.6 s，在线问答不可用。
-   `AIClients` 已支持 `LLM_ENABLE_THINKING` 开关，`.env` 里默认 false。
-3. **关思考后值得换**：弃答从 1/2 提升到 2/2（qwen-flash 会编"电池仓有一颗螺丝"），
-   代价是 1.6 倍延迟。
-
-### 已知 badcase（详见 `eval/badcase.md`）
-
-`技术指标说明` 是一整段 457 字的单行文本，塞了十余个互不相关的指标（重量、尺寸、电池型号、
-频宽、海拔……）。它作为**一个切片**参与检索时，向量被平均化，导致"显示屏几位数""尺寸多少"
-"用什么电池"这类参数型问题都召不回它（F01 / F03 / M08 三题均未命中）。
-修法是把这段按"指标项"拆成键值对切片（或建独立的参数索引），预期能把 `fact` 类从 0.917 拉到 1.0。
-
-## 已知限制与规划
-
-- **HyDE 在当前业务上是负收益**：三次实测均未超过纯混合检索，且每题多一次 LLM 调用。
-  代码保留，但建议在 `main_graph` 里默认不接该分支（开关待补），详见「评测」一节。
-- **`技术指标说明` 切片粒度过粗**：该章节是一整段 457 字的单行文本，混了十余个互不相关的指标，
-  向量被平均化，导致"显示屏几位数""尺寸多少""用什么电池"三类参数问题召不回（F01 / F03 / M08）。
-  修法是按指标项拆成键值对切片，预期把 `fact` 类 Hit@5 从 0.917 拉到 1.0。
-- **Milvus 现存集合数据不可用**：实测 `kb_chunks_v1` 里的 `content` 是编码损坏后的替换字符，
-  `item_name` 存着 `{"item_name": "..."}` 整段 JSON。评测因此改为从干净的 Markdown 重新切分；
-  线上要恢复，必须在导入链路写库前加编码断言并重新导入。
-- **评测规模有限**：单本手册 → 22 个切片、50 道题，误差约 ±2.5 个百分点；
-  跨手册对比、item_name 过滤的必要性都无法在当前语料上验证。
-- **商品名对齐依赖 item_name 集合**：若从未成功导入手册（集合为空），节点会退化为
-  「直接用 LLM 抽取结果过滤」，此时可能召回为空。暂不支持人工纠错反馈回流。
-- **任务状态为进程内存**：`task_util` 使用内存字典维护进度与结果，服务重启后任务状态丢失；后续将迁移至 Redis。
-- **查询侧进度轮询**：`/status/{task_id}` 目前仅由导入服务提供，`chat.html` 已预留轮询入口。
-- **已实现基础鉴权与上传校验**：`API_KEYS`（头或查询参数）、上传后缀白名单、50MB 流式上限、
-  文件名净化（`Path(name).name` + 白名单字符），并有 26 个安全/切分类单元测试覆盖；
-  **仍为单租户**：多租户需要把 `item_name` 过滤扩展为 `tenant_id` 标量过滤 + JWT 角色。
-- **规划**：技术指标拆分重切、HyDE 默认下线、BM25 独立召回、切片去重与增量更新、
-  答案引用溯源（页码级）、多模态检索（以图搜手册）、Docker Compose 一键编排。
+| 优先级 | 事项 | 预期收益 |
+| --- | --- | --- |
+| P1 | 章节内隐式二级切分（按编号条目/段落切） | 唯一标题/切片从 21/50 提升，Hit@5 回升 |
+| P1 | 跨章重复检测 + gold 多标 | 修掉假失败，预计 +1 题 |
+| P2 | 页码溯源（`page_idx` → 标量字段 → 答案引用 + PDF 跳页） | 可溯源性质变 |
+| P2 | 语义缓存（相似问题命中） | 延迟与 token 成本下降 |
+| P3 | 多租户与权限过滤 | 面向 B 端交付 |
+| P3 | 模型服务化（embedding/rerank 独立服务） | 吞吐提升，解开单卡锁 |
 
 ## 更新记录
 
-**2026-11-12 · 评测层落地 + 检索参数接线 + 模型切换**
-
-新增 `eval/`（1958 行）：50 题分层评测集、5 组检索消融、答案层模型 A/B、23 个单测、8 条归因 badcase。
-
-| 位置 | 原状 | 调整 |
-| --- | --- | --- |
-| `EMBEDDING_SEARCH_LIMIT` / `HYDE_SEARCH_LIMIT` | 只定义、没人读，实际每路固定召回 5 条，与 README 声明不符 | 接入 `vector_search` / `hyde_search`，召回条数真正由配置决定 |
-| `WeightedRanker` 权重 | 硬编码 `(0.5, 0.5)` | 改为 `EMBEDDING_DENSE_WEIGHT` / `EMBEDDING_SPARSE_WEIGHT` |
-| 检索模式 | 只有混合检索 | `create_hybrid_search_requests(mode=...)` 支持 `dense` / `sparse` / `hybrid`，单路时自动只传一个权重 |
-| `AIClients._create_llm_openai` | 固定 `temperature=0`，无思考模式控制 | 新增 `LLM_ENABLE_THINKING`（留空不下发）：qwen3 系列默认思考，HyDE 单次 16 s、p95 47 s，必须可关 |
-| 默认模型 | `qwen-flash` | `qwen3.8-flash` + 关思考：弃答正确率 1/2 → 2/2，代价 1.6 倍延迟 |
-| HyDE 缓存键（`eval/hyde.py`） | 只有 `query + item_names` | 加入模型名与思考模式——否则换模型会命中旧缓存，A/B 变成自欺欺人 |
-| 实测结论 | — | 检索指标与 LLM 选型无关（A1/A2/A4/A5 逐位相同）；瓶颈在切分与融合。详见 `eval/model-compare.md` |
-
-**2026-11-11 · 查询图拓扑调整（`query_process/main_graph.py`）**
-
-| 位置 | 原状 | 调整 |
-| --- | --- | --- |
-| `web_search_mcp` 出边 | `web_search_mcp → join`，联网结果要与两路向量召回一起汇合 | 改为直连 `rerank`：RRF 只融合两路向量召回，`rrf` 可与联网搜索并行执行，减少一次汇合等待 |
-| `rerank` 入边 | 单边 `rrf → rerank` | 改为 `add_edge(["rrf", "web_search_mcp"], "rerank")` 列表声明：两个上游都完成才触发一次。若写成两条独立 `add_edge`，LangGraph 会按超步分别触发，`rerank` 与 `answer_output` 各执行两次（实测执行序 `v/h/w → rerank → answer → rrf → rerank → answer`，首轮 rerank 只有联网结果） |
-| `QueryConfig.openai_api_key` | 读 `OPENAI_API_KEY` | 改读 `DASHSCOPE_API_KEY`，与 `AIClients` 初始化所用密钥保持一致（MCP 联网检索的 Bearer 头同源） |
-
-**2026-11-10 · 商品名确认节点补全（`query_process/nodes/item_name_confirm.py`）**
-
-原实现只完成「LLM 抽取 + 写回状态」，对齐评分、分数差过滤、置信度决策与历史回填均停留在注释。现已补齐：
-
-| 环节 | 实现 |
+| 日期 | 变更 |
 | --- | --- |
-| 指代消解 | 拉取最近 10 条会话拼进 Prompt；时间正序写入 `state["history"]` 供答案节点使用 |
-| 抽取容错 | LLM 客户端缺失、调用异常、返回非 JSON 均降级为原始问题，不再抛错中断；抽取名去重 |
-| 向量匹配 `match_vector` | 每条抽取名经 BGE-M3 编码后混合检索 `item_name` 集合 Top-5，产出 `{extracted_name, matches[]}` |
-| 评分对齐 `score_align` | ≥ 0.7 高置信区：与抽取名同名直接确认、唯一候选直接确认、多个候选转入 options；0.6 ~ 0.7 落入候选区；options 最多 3 个 |
-| 分数差过滤 `score_filter` | `confirmed` 多于 1 个时，按与最高分差值 ≤ `ITEM_NAME_GAP_ABS`（0.15）保留，剔除掉队项 |
-| 决策 `_decide` | `confirmed` → 锁定并清空 answer 继续三路检索；`options` → 生成反问话术；两者皆空 → 兜底道歉；三个分支统一写回 `rewritten_query` |
-| 历史回填 `_backfill_history` | 仅 `confirmed` 有值、且仅针对缺 `item_names` 的用户消息：内存同步 + `update_message_item_names()` 批量写 MongoDB |
-| 异常兜底 | 对齐链路抛错（Milvus / 嵌入模型不可用）→ 用 LLM 抽取结果继续检索，不阻断问答 |
-
-**2026-11-10 · 流水线缺陷修复**
-
-| 位置 | 问题 | 修复 |
-| --- | --- | --- |
-| `import_process/nodes/md_img.py` | 图片链接替换结果只写入了备份文件，图状态里的 `md_content` 仍是转换前的原始 Markdown，后续切分拿不到 MinIO 图片地址 | 节点结尾回写 `state["md_content"] = new_md_content` |
-| `import_process/nodes/ducment_split.py` | 二次切分未扣除标题前缀长度，切片总长会超出 `max_content_length` | `chunk_size` 改用 `body_available_length`（阈值 − 标题前缀长度） |
-| `import_process/nodes/ducment_split.py` | 子切片用正文首句充当 `title`，污染标题字段与最终 `content` 前缀 | 改为 `标题（n/N）` 序号标注，`len(texts) == 1` 时保留原章节标题 |
-| `query_process/nodes/item_name_confirm.py` | 抽取出的商品名与改写问题未写回图状态，下游向量检索取不到 `item_names` 过滤条件 | 显式写回 `state["item_names"]` 与 `state["rewritten_query"]`，并复用同一次 LLM 抽取结果避免重复调用 |
+| 2026-11-14 | 换域到家电说明书（美的空调 + 米家摄像机）；30 题新评测集；全仓注释去除旧域残留 |
+| 2026-11-14 | 新增 max_k / HyDE 权重对照实验，确认两者对 Hit@5 无影响 |
+| 2026-11-13 | P1 工程化：鉴权与上传校验、Redis 任务态、结构化日志、Locust 压测、GitHub Actions |
+| 2026-11-12 | 评测层落地：50 题评测集、5 组消融、badcase 归因、报告生成 |
 
 ---
+
+## 相关文档
+
+- [`eval/README.md`](eval/README.md)：评测协议、指标口径、复现方式
+- [`eval/REPORT-baseline.md`](eval/REPORT-baseline.md)：旧域完整评测报告（机器生成）
+- [`eval/badcase.md`](eval/badcase.md)：BC-01 ~ BC-11 失败案例与归因
+- [`deploy/README.md`](deploy/README.md)：离线镜像导入、模型挂载、GPU 写法、故障排查
+- [`loadtest/README.md`](loadtest/README.md)：压测方法与实测数据
