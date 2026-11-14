@@ -350,6 +350,14 @@ class ItemNameConfirmNode(BaseNode):
         if align_failed:
             confirmed, options = list(item_names or []), []
 
+        # 5.2 单产品库兜底：知识库里只有一款产品时，用户说"这款空调"也该能答，
+        # 不必反问"你指的是哪款产品"（换域到家电后语料往往只有一两份手册）。
+        if not confirmed and not options:
+            single_item = self._single_item_name()
+            if single_item:
+                confirmed = [single_item]
+                self.logger.info(f"单产品库兜底命中: {single_item}")
+
         # state['answer'] 存在   -> 反问用户（options）或兜底道歉，流程直接进答案节点
         # state['answer'] 不存在 -> 商品名称已确认，继续走三路检索
         # 6.决策更新状态
@@ -363,6 +371,28 @@ class ItemNameConfirmNode(BaseNode):
         state["history"] = list(reversed(history_messages))
 
         return state
+
+    def _single_item_name(self):
+        """知识库只有一款产品时返回它，否则返回 None。
+
+        只做一次 limit=2 的标量查询：拿到 2 条就说明不止一款，直接放弃兜底。
+        """
+        try:
+            client = StorageClients.get_milvus_client()
+            collection = self.config.item_name_collection
+            if not collection or not client.has_collection(collection):
+                return None
+            rows = client.query(
+                collection_name=collection,
+                filter='file_title != ""',
+                output_fields=["item_name"],
+                limit=2,
+            )
+            if len(rows) == 1:
+                return rows[0].get("item_name") or None
+        except Exception as e:
+            self.logger.warning(f"单产品兜底查询失败: {e}")
+        return None
 
     def _backfill_history(self, history_messages, confirmed):
         """把已确认的商品名称回填到历史会话中此前没有商品名的用户消息

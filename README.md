@@ -393,7 +393,44 @@ python -m eval.run_eval --embedder hash --hyde none --limit 5 --configs A1_dense
 结果写到 `eval/results/<run_id>/`，其中 `summary.md` 可直接贴进文档。
 指标口径与标注协议见 [`eval/README.md`](eval/README.md)。
 
-### 8. 容器化部署（虚拟机 Docker）
+### 8. 第二组语料：家电说明书（换域验证）
+
+同一套代码不改业务逻辑，只替换提示词示例与语料，就能迁到家电域——用来验证
+「架构是否真的领域无关」。当前语料（`kb_chunks_home_v1` / `kb_item_names_home_v1`）：
+
+| 文档 | 页数 | 型号 | 切片 |
+| --- | --- | --- | --- |
+| 美的 变频分体落地式空调器 使用安装说明书 | 40 | `KFR-51LW/N8KS1-1P` / `KFR-72LW/N8KS1-1P` | 50 |
+| 小米 米家智能摄像机 云台版 使用说明书 | 16 | 米家智能摄像机 云台版 | 22 |
+
+评测集 `eval/dataset-home.jsonl`（30 题：事实 8 / 表格 7 / 步骤 7 / 多轮 5 / 域外 3），
+语料 `eval/corpus/home.jsonl`（72 切片，fingerprint `home-v2`）：
+
+```bash
+python -m eval.link_gold --dataset eval/dataset-home.jsonl --corpus eval/corpus/home.jsonl --corpus-source milvus
+python -m eval.run_eval --dataset eval/dataset-home.jsonl --corpus eval/corpus/home.jsonl \
+  --run-id home-v2 --configs A1_dense,A2_hybrid,A3_hyde_rrf,A4_rerank,A5_cutoff
+```
+
+| 配置 | Hit@5 | Recall@5 | MRR@5 | nDCG@5 | 平均文档数 | 平均上下文字数 |
+| --- | --- | --- | --- | --- | --- | --- |
+| A1_dense | 0.852 | 0.815 | 0.711 | 0.723 | 10.0 | 7702 |
+| A2_hybrid | 0.852 | 0.815 | 0.738 | 0.738 | 10.0 | 7556 |
+| A3_hyde_rrf | 0.852 | 0.815 | 0.753 | 0.747 | 10.0 | 7573 |
+| A4_rerank | **0.889** | **0.852** | **0.840** | **0.816** | 10.0 | 7573 |
+| A5_cutoff | **0.889** | **0.852** | **0.840** | **0.816** | 7.4 | 5692 |
+
+三点结论：
+
+1. **换域后排序不变**：精排依旧带来最大增益（MRR 0.753→0.840），断崖截断在不掉指标的前提下
+   把平均上下文从 7573 字压到 5692 字（-25%）。
+2. **绝对指标低于万用表集（0.889 vs 0.950）**，原因可定位：这份 40 页手册每页重复页眉
+   （`# 使用说明 USE INSTRUCTION` 出现 20+ 次），标题感知切分退化成"同标题多片"，
+   检索时标题区分度不足。属于已知的切分层问题，不是换域引入的新缺陷。
+3. **单文档 vs 双文档语料指标一致**（0.889），说明多产品库里 `item_name` 过滤没有引入额外噪声；
+   跨产品提问会走"请确认产品"分支，型号提问走精确匹配短路。
+
+### 9. 容器化部署（虚拟机 Docker）
 
 基础设施（Milvus / MinIO / MongoDB / etcd）与两个应用服务都提供了 compose：
 
@@ -411,7 +448,7 @@ python3 verify.py --host 127.0.0.1         # 端口与健康自检
 常见故障排查见 [`deploy/README.md`](deploy/README.md)。
 
 
-### 9. 可观测性与压测
+### 10. 可观测性与压测
 
 **结构化日志**：服务默认输出 JSON（`LOG_FORMAT=json`，本地调试可设 `text`），
 每条日志都带 `request_id` / `task_id`，节点完成时额外带 `node` 与 `duration_ms`：
